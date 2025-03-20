@@ -69,8 +69,8 @@ class I18nManager:
             'device_status': {'cn': '设备连接状态', 'en': 'Device Connection Status'},
             'all_sky_camera_history': {'cn': '全天相机历史图片，右下角全屏放大查看', 'en': 'All Sky Camera History, Click Bottom-Right to Fullscreen'},
             'current_position': {'cn': '当前位置', 'en': 'Current Position'},
-            'connected': {'cn': '已连接', 'en': 'Connected'},
-            'disconnected': {'cn': '未连接', 'en': 'Disconnected'},
+            'connected': {'cn': '断开设备', 'en': 'Disconnect'},
+            'disconnected': {'cn': '连接设备', 'en': 'Connect'},
             'connecting': {'cn': '连接中', 'en': 'Connecting'},
             'error': {'cn': '错误', 'en': 'Error'},
             'tracking': {'cn': '跟踪中', 'en': 'Tracking'},
@@ -85,7 +85,13 @@ class I18nManager:
             'filter_l': {'cn': 'L滤光片', 'en': 'L-band'},
             'moving_yes': {'cn': '是', 'en': 'Yes'},
             'moving_no': {'cn': '否', 'en': 'No'},
-            'all_sky_camera_tip': {'cn': '全天相机历史图片，右下角全屏放大查看', 'en': 'All Sky Camera History, Click Bottom-Right to Fullscreen'}
+            'all_sky_camera_tip': {'cn': '全天相机历史图片，右下角全屏放大查看', 'en': 'All Sky Camera History, Click Bottom-Right to Fullscreen'},
+            'status_unknown': {'cn': '状态未知', 'en': 'Status Unknown'},
+            '望远镜转动中': {'cn': '望远镜转动中', 'en': 'Telescope Slewing'},
+            '导星中': {'cn': '导星中', 'en': 'Guiding'},
+            '跟踪中': {'cn': '跟踪中', 'en': 'Tracking'},
+            '望远镜已复位': {'cn': '望远镜已复位', 'en': 'Telescope Parked'},
+            '望远镜在原位': {'cn': '望远镜在原位', 'en': 'Telescope at Home'}
         }
 
     def get_text(self, key, with_unit=None):

@@ -1,25 +1,35 @@
 """
 主窗口模块
 """
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtCore import Qt, QTimer, QDateTime
 from PyQt5.QtGui import QImage, QPixmap
 from src.ui.components import LabelPair, DeviceControl, InfoGroup, ThemeButton, AngleVisualizer
 from src.utils.i18n import i18n
 from src.utils.theme_manager import theme_manager
 from src.services.astronomy_service import astronomy_service
 from src.services.device_service import device_service
+from src.services.dss_image_fetcher import DSSImageFetcher
 from src.config.settings import TELESCOPE_CONFIG, DEVICES, LAYOUT_CONFIG
+from utils import load_config
 import os
 import time
 
-class MainWindow(QWidget):
-    def __init__(self):
+class MainWindow(QMainWindow):
+    def __init__(self, telescope_devices=None):
         super().__init__()
-        self.init_ui()
+        # 创建中心部件
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        
+        # 创建DSS图像获取线程
+        self.dss_fetcher = DSSImageFetcher()
+        self.dss_fetcher.image_ready.connect(self.update_dss_image)
+        
+        self.init_ui(telescope_devices)
         self.init_timer()
 
-    def init_ui(self):
+    def init_ui(self, telescope_devices):
         """初始化UI"""
         self.setWindowTitle(i18n.get_text('telescope_monitor'))
         self.setGeometry(100, 100, 1920, 1080)
@@ -86,10 +96,67 @@ class MainWindow(QWidget):
         # 设备连接状态组
         self.device_group = InfoGroup('device_connection')
         self.device_group.layout.setSpacing(LAYOUT_CONFIG['group_spacing'])
-        for device_id, name in DEVICES:
+        
+        # 添加望远镜设备控制组件（新的带下拉菜单的版本）
+        self.mount_control = DeviceControl('mount', i18n.get_text('mount'))
+        if telescope_devices:  # 如果有设备列表，更新到下拉菜单
+            self.mount_control.update_devices(telescope_devices)
+        # 连接位置更新信号
+        self.mount_control.signals.location_updated.connect(self.update_location_info)
+        # 连接坐标更新信号
+        self.mount_control.signals.coordinates_updated.connect(self.update_coordinates)
+        # 连接状态更新信号
+        self.mount_control.signals.status_updated.connect(self.update_telescope_status)
+        # 连接设备列表更新信号
+        self.mount_control.telescope_monitor.devices_updated.connect(self.mount_control.update_devices)
+        self.device_group.layout.addLayout(self.mount_control.get_layout())
+        self.device_controls.append(self.mount_control)
+        
+        # 添加其他设备控制组件
+        other_devices = [
+            ('focuser', 'focuser'),
+            ('rotator', 'rotator'),
+            ('weather', 'weather')
+        ]
+        for device_id, name in other_devices:
             device_control = DeviceControl(device_id, i18n.get_text(device_id))
+            if device_id == 'focuser':
+                # 连接电调焦状态更新信号
+                device_control.telescope_monitor.focuser_updated.connect(self.update_focuser_status)
+                # 连接设备列表更新信号
+                device_control.telescope_monitor.devices_updated.connect(device_control.update_devices)
+                # 如果有设备列表，更新到下拉菜单
+                if telescope_devices:
+                    device_control.update_devices(telescope_devices)
+            elif device_id == 'rotator':
+                # 连接消旋器状态更新信号
+                device_control.telescope_monitor.rotator_updated.connect(self.update_rotator_status)
+                # 连接设备列表更新信号
+                device_control.telescope_monitor.devices_updated.connect(device_control.update_devices)
+                # 如果有设备列表，更新到下拉菜单
+                if telescope_devices:
+                    device_control.update_devices(telescope_devices)
+            elif device_id == 'weather':
+                # 连接气象站数据更新信号
+                if device_control.telescope_monitor:
+                    device_control.telescope_monitor.weather_updated.connect(self.update_weather_info)
+                    # 连接设备列表更新信号
+                    device_control.telescope_monitor.devices_updated.connect(device_control.update_devices)
+                    # 如果有设备列表，更新到下拉菜单
+                    if telescope_devices:
+                        device_control.update_devices(telescope_devices)
+                    else:
+                        # 如果没有设备列表，添加一个默认设备
+                        default_devices = [{
+                            'DeviceName': 'ASCOM Observing Conditions Simulator',
+                            'DeviceType': 'ObservingConditions',
+                            'DeviceNumber': 0,
+                            'ApiVersion': '1.0'
+                        }]
+                        device_control.update_devices(default_devices)
             self.device_controls.append(device_control)
             self.device_group.layout.addLayout(device_control.get_layout())
+        
         left_layout.addWidget(self.device_group.get_widget())
 
         # 中间栏
@@ -124,7 +191,7 @@ class MainWindow(QWidget):
         self.telescope_status.add_item('dec', '+30:00:00', 'large-text')
         self.telescope_status.add_item('alt', '60°', 'medium-text')
         self.telescope_status.add_item('az', '120°', 'medium-text')
-        self.telescope_status.add_item('status', i18n.get_text('tracking'))
+        self.telescope_status.add_item('status', i18n.get_text('status_unknown'), 'medium-text')
         middle_layout.addWidget(self.telescope_status.get_widget())
 
         # 相机设置组
@@ -139,7 +206,7 @@ class MainWindow(QWidget):
         self.focuser_status = InfoGroup('focuser_status')
         self.focuser_status.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         self.focuser_status.add_item('position', '34000/60000', 'medium-text')
-        self.focuser_status.add_item('angle', '90°', 'medium-text')
+        self.focuser_status.add_item('angle', '0.0°', 'medium-text')
         self.focuser_status.add_item('moving', i18n.get_text('moving_yes'))
         self.focuser_status.add_item('temperature', '-10.0°C', 'medium-text')
         self.focuser_status.add_item('last_focus', '2025-02-23 12:00:00')
@@ -199,10 +266,20 @@ class MainWindow(QWidget):
         content_layout.addLayout(middle_layout, 5)  # 减小中间栏比例
         content_layout.addLayout(right_layout, 3)   # 增加右侧栏比例
 
-        self.setLayout(main_layout)
+        # 设置中心部件的布局
+        self.central_widget.setLayout(main_layout)
 
         # 设置默认主题
         self.change_theme('light')
+
+        # 连接设备监控线程信号
+        if self.mount_control.telescope_monitor:
+            self.mount_control.telescope_monitor.coordinates_updated.connect(self.update_coordinates)
+            self.mount_control.telescope_monitor.status_updated.connect(self.update_telescope_status)
+            self.mount_control.telescope_monitor.devices_updated.connect(self.mount_control.update_devices)
+            
+            # 连接气象站数据信号
+            self.mount_control.telescope_monitor.weather_updated.connect(self.update_weather_info)
 
     def init_timer(self):
         """初始化定时器"""
@@ -240,7 +317,7 @@ class MainWindow(QWidget):
         
         # 更新望远镜状态组的动态值
         self.telescope_status.update_text()
-        self.telescope_status.pairs['status'].set_value(i18n.get_text('tracking'))
+        self.telescope_status.pairs['status'].set_value(i18n.get_text('status_unknown'))
         
         # 更新相机设置组的动态值
         self.camera_settings.update_text()
@@ -266,37 +343,43 @@ class MainWindow(QWidget):
         self.update_time_info()
 
     def calculate_frame_dec_angle(self):
-        """计算画幅与赤纬夹角并更新DSS星图"""
+        """计算框架赤纬角度"""
         try:
-            # 从调焦器状态中获取消旋器角度
-            rotator_text = self.focuser_status.pairs['angle'].value_label.text()
-            rotator_angle = float(rotator_text.replace('°', ''))
-            
-            # 从望远镜状态中获取赤经和赤纬
+            # 获取当前坐标
             ra_text = self.telescope_status.pairs['ra'].value_label.text()
             dec_text = self.telescope_status.pairs['dec'].value_label.text()
             
-            # 计算位置角和夹角
-            frame_dec_angle = astronomy_service.calculate_position_angle(
-                ra_text, dec_text, rotator_angle
-            )
+            # 转换坐标为度数
+            ra_deg = astronomy_service._parse_time_format(ra_text)
+            dec_deg = astronomy_service._parse_time_format(dec_text)
             
-            if frame_dec_angle is not None:
-                # 更新显示
-                self.rotator_angle_group.pairs['frame_dec_angle'].set_value(f"{frame_dec_angle:.1f}°")
-                
-                # 获取并更新DSS星图
-                dss_image_path = astronomy_service.get_dss_image(ra_text, dec_text)
-                
-                # 更新可视化组件
-                self.angle_visualizer.set_background(dss_image_path)
-                # 使用赤纬作为参考方向，消旋器角度作为画幅方向
-                _, dec_deg = astronomy_service.parse_coordinates(ra_text, dec_text)
-                if dec_deg is not None:
-                    self.angle_visualizer.set_angles(0, rotator_angle)  # 使用0度作为赤纬参考线
+            # 只有当坐标变化超过阈值时才更新DSS图像
+            if not hasattr(self, 'last_coords') or self.last_coords is None:
+                self.last_coords = (ra_deg, dec_deg)
+                self.dss_fetcher.set_coordinates(ra_text, dec_text)
+            else:
+                last_ra, last_dec = self.last_coords
+                # 如果坐标变化超过0.5度才更新
+                if abs(ra_deg - last_ra) > 0.5 or abs(dec_deg - last_dec) > 0.5:
+                    self.last_coords = (ra_deg, dec_deg)
+                    self.dss_fetcher.set_coordinates(ra_text, dec_text)
             
-        except (ValueError, IndexError) as e:
-            print(f"角度计算错误: {e}")
+            # 计算框架赤纬角度
+            frame_dec_angle = dec_deg
+            self.frame_dec_angle = frame_dec_angle
+            
+            # 更新显示
+            self.rotator_angle_group.pairs['frame_dec_angle'].set_value(f"{frame_dec_angle:.6f}°")
+            
+            # 更新角度可视化
+            self.angle_visualizer.set_angles(0, frame_dec_angle)  # 使用0度作为赤纬参考线
+            
+        except Exception as e:
+            print(f"计算框架赤纬角度失败: {e}")
+
+    def update_dss_image(self, image_path):
+        """更新DSS图像"""
+        self.angle_visualizer.set_background(image_path)
 
     def update_time_info(self):
         """更新时间信息"""
@@ -321,6 +404,185 @@ class MainWindow(QWidget):
         moon_phase = astronomy_service.calculate_moon_phase()
         self.time_group.pairs['moon_phase'].set_value(str(moon_phase))
         
-        # 每5秒更新一次角度计算和星图
-        if int(time.time()) % 5 == 0:
+        # 每30秒更新一次角度计算和星图
+        if int(time.time()) % 30 == 0:
             self.calculate_frame_dec_angle() 
+
+    def update_location_info(self, longitude, latitude, elevation):
+        """更新位置信息"""
+        self.basic_info.pairs['longitude'].set_value(f"{longitude:.6f}°")
+        self.basic_info.pairs['latitude'].set_value(f"{latitude:.6f}°")
+        self.basic_info.pairs['altitude_text'].set_value(f"{elevation:.1f}m")
+
+    def update_coordinates(self, ra, dec, alt, az):
+        """更新望远镜坐标信息"""
+        # 将赤经转换为时分秒格式
+        ra_h = int(ra)
+        ra_m = int((ra - ra_h) * 60)
+        ra_s = int(((ra - ra_h) * 60 - ra_m) * 60)
+        ra_str = f"{ra_h:02d}:{ra_m:02d}:{ra_s:02d}"
+        
+        # 将赤纬转换为度分秒格式
+        dec_sign = '+' if dec >= 0 else '-'
+        dec_abs = abs(dec)
+        dec_d = int(dec_abs)
+        dec_m = int((dec_abs - dec_d) * 60)
+        dec_s = int(((dec_abs - dec_d) * 60 - dec_m) * 60)
+        dec_str = f"{dec_sign}{dec_d:02d}:{dec_m:02d}:{dec_s:02d}"
+        
+        # 更新界面显示
+        self.telescope_status.pairs['ra'].set_value(ra_str)
+        self.telescope_status.pairs['dec'].set_value(dec_str)
+        self.telescope_status.pairs['alt'].set_value(f"{alt:.1f}°")
+        self.telescope_status.pairs['az'].set_value(f"{az:.1f}°") 
+
+    def update_telescope_status(self, status):
+        """更新望远镜状态"""
+        if not status:
+            self.telescope_status.pairs['status'].set_value('Status Unknown')
+            self.telescope_status.pairs['status'].value_label.setProperty('class', 'medium-text status-normal')
+            return
+
+        # 收集所有激活的状态
+        active_states = []
+        if status.get('slewing'):
+            active_states.append('Slewing')
+        if status.get('ispulseguiding'):
+            active_states.append('Guiding')
+        if status.get('tracking'):
+            active_states.append('Tracking')
+        if status.get('atpark'):
+            active_states.append('AtPark')
+        if status.get('athome'):
+            active_states.append('AtHome')
+
+        # 如果没有任何状态激活，显示未知状态
+        if not active_states:
+            self.telescope_status.pairs['status'].set_value('Status Unknown')
+            self.telescope_status.pairs['status'].value_label.setProperty('class', 'medium-text status-normal')
+            return
+
+        # 根据状态设置样式类
+        style_class = 'medium-text '  # 使用 medium-text 替代 status-text
+        if 'Slewing' in active_states:
+            style_class += 'status-warning'
+        elif 'Guiding' in active_states or 'Tracking' in active_states:
+            style_class += 'status-success'
+        elif 'AtHome' in active_states or 'AtPark' in active_states:
+            style_class += 'status-info'
+        else:
+            style_class += 'status-normal'
+
+        # 更新状态显示
+        self.telescope_status.pairs['status'].set_value(', '.join(active_states))
+        self.telescope_status.pairs['status'].value_label.setProperty('class', style_class)
+        self.telescope_status.pairs['status'].value_label.style().unpolish(self.telescope_status.pairs['status'].value_label)
+        self.telescope_status.pairs['status'].value_label.style().polish(self.telescope_status.pairs['status'].value_label)
+
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        # 停止DSS图像获取线程
+        self.dss_fetcher.stop()
+        self.dss_fetcher.wait()
+        
+        # 停止所有设备的监控线程
+        for device_control in self.device_controls:
+            if hasattr(device_control, 'telescope_monitor') and device_control.telescope_monitor:
+                device_control.telescope_monitor.stop()
+                device_control.telescope_monitor.wait()
+        
+        super().closeEvent(event) 
+
+    def update_focuser_status(self, status):
+        """更新电调焦状态显示"""
+        # 更新位置
+        self.focuser_status.pairs['position'].set_value(f"{status['position']}/{status['maxstep']}")
+        
+        # 更新温度
+        self.focuser_status.pairs['temperature'].set_value(f"{status['temperature']:.1f}°C")
+        
+        # 更新移动状态
+        moving_text = i18n.get_text('moving_yes') if status['ismoving'] else i18n.get_text('moving_no')
+        self.focuser_status.pairs['moving'].set_value(moving_text)
+        
+        # 设置移动状态的样式
+        style_class = 'medium-text ' + ('status-warning' if status['ismoving'] else 'status-success')
+        self.focuser_status.pairs['moving'].value_label.setProperty('class', style_class)
+        self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+        self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+
+    def update_rotator_status(self, status):
+        """更新消旋器状态显示"""
+        # 更新调焦器状态组中的消旋器角度
+        self.focuser_status.pairs['angle'].set_value(f"{status['position']:.1f}°")
+        
+        # 更新角度可视化
+        self.angle_visualizer.set_angles(0, status['position'])
+
+    def update_weather_info(self, weather_data):
+        """更新气象站信息"""
+        # 打印完整的气象站数据到控制台
+        print("\n气象站数据更新:")
+        for key, value in weather_data.items():
+            print(f"  {key}: {value}")
+        
+        # 更新环境监测组中的气象数据
+        if 'cloudcover' in weather_data and weather_data['cloudcover'] is not None:
+            self.environment.pairs['cloud_cover'].set_value(f"{weather_data['cloudcover']:.0f}%")
+        else:
+            self.environment.pairs['cloud_cover'].set_value("--")
+        
+        if 'dewpoint' in weather_data and weather_data['dewpoint'] is not None:
+            self.environment.pairs['dew_point'].set_value(f"{weather_data['dewpoint']:.1f}°C")
+        else:
+            self.environment.pairs['dew_point'].set_value("--")
+            
+        if 'humidity' in weather_data and weather_data['humidity'] is not None:
+            self.environment.pairs['humidity'].set_value(f"{weather_data['humidity']:.0f}%")
+        else:
+            self.environment.pairs['humidity'].set_value("--")
+            
+        if 'pressure' in weather_data and weather_data['pressure'] is not None:
+            self.environment.pairs['pressure'].set_value(f"{weather_data['pressure']:.0f}hPa")
+        else:
+            self.environment.pairs['pressure'].set_value("--")
+            
+        if 'rainrate' in weather_data and weather_data['rainrate'] is not None:
+            self.environment.pairs['rain'].set_value(f"{weather_data['rainrate']:.1f}mm/h")
+        else:
+            self.environment.pairs['rain'].set_value("--")
+            
+        if 'skybrightness' in weather_data and weather_data['skybrightness'] is not None:
+            self.environment.pairs['sky_brightness'].set_value(f"{weather_data['skybrightness']:.1f}lux")
+        else:
+            self.environment.pairs['sky_brightness'].set_value("--")
+            
+        if 'skytemperature' in weather_data and weather_data['skytemperature'] is not None:
+            self.environment.pairs['sky_temperature'].set_value(f"{weather_data['skytemperature']:.1f}°C")
+        else:
+            self.environment.pairs['sky_temperature'].set_value("--")
+            
+        if 'starfwhm' in weather_data and weather_data['starfwhm'] is not None:
+            self.environment.pairs['seeing'].set_value(f"{weather_data['starfwhm']:.1f}arcsec")
+        else:
+            self.environment.pairs['seeing'].set_value("--")
+            
+        if 'temperature' in weather_data and weather_data['temperature'] is not None:
+            self.environment.pairs['air_temp'].set_value(f"{weather_data['temperature']:.1f}°C")
+        else:
+            self.environment.pairs['air_temp'].set_value("--")
+            
+        if 'winddirection' in weather_data and weather_data['winddirection'] is not None:
+            self.environment.pairs['wind_direction'].set_value(f"{weather_data['winddirection']:.0f}°")
+        else:
+            self.environment.pairs['wind_direction'].set_value("--")
+            
+        if 'windspeed' in weather_data and weather_data['windspeed'] is not None:
+            self.environment.pairs['wind_speed'].set_value(f"{weather_data['windspeed']:.1f}m/s")
+        else:
+            self.environment.pairs['wind_speed'].set_value("--")
+            
+        if 'windgust' in weather_data and weather_data['windgust'] is not None:
+            self.environment.pairs['avg_wind_speed'].set_value(f"{weather_data['windgust']:.1f}m/s")
+        else:
+            self.environment.pairs['avg_wind_speed'].set_value("--")
