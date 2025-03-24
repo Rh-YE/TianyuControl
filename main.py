@@ -11,7 +11,7 @@ sys.path.append(current_dir)
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 from src.ui.main_window import MainWindow
-from device_manager import Telescope, Focuser, Rotator, ObservingConditions
+from device_manager import Telescope, Focuser, Rotator, ObservingConditions, Dome, Cooler
 
 def connect_and_get_device(device_manager):
     """连接设备并返回设备信息"""
@@ -54,6 +54,23 @@ def search_telescope():
         }
         all_devices.append(weather_device)
         print("✓ 气象站设备已连接")
+    
+    # 搜索圆顶设备
+    dome = Dome()
+    if dome.connect():
+        # 确保圆顶设备信息包含所有必要字段
+        dome_device = {
+            'DeviceName': dome.device.get('DeviceName', 'ASCOM Dome Simulator'),
+            'DeviceType': 'Dome',
+            'DeviceNumber': dome.device.get('DeviceNumber', 0),
+            'ApiVersion': dome.device.get('ApiVersion', '1.0')
+        }
+        all_devices.append(dome_device)
+        print("✓ 圆顶设备已连接")
+    
+    # 创建水冷机设备（这里只是添加一个占位符，实际连接会在UI中通过串口完成）
+    cooler = Cooler()
+    print("✓ 水冷机设备准备就绪，等待连接串口")
     
     print("\n开始启动主程序...\n")
     return all_devices

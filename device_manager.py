@@ -68,4 +68,12 @@ class ObservingConditions(DeviceManager):
     def __init__(self):
         super().__init__("ObservingConditions")
 
+class Dome(DeviceManager):
+    def __init__(self):
+        super().__init__("dome")
+
+class Cooler(DeviceManager):
+    def __init__(self):
+        super().__init__("cooler")
+
 

@@ -13,6 +13,8 @@ class TelescopeMonitor(QThread):
     focuser_updated = pyqtSignal(dict)  # 电调焦状态信号
     rotator_updated = pyqtSignal(dict)  # 消旋器状态信号
     weather_updated = pyqtSignal(dict)  # 气象站数据信号
+    cover_updated = pyqtSignal(dict)  # 镜头盖状态信号
+    dome_updated = pyqtSignal(dict)  # 圆顶状态信号
     
     def __init__(self, device_number=0, device_type='telescope'):
         super().__init__()
@@ -32,8 +34,18 @@ class TelescopeMonitor(QThread):
         """设置设备编号和类型"""
         self.device_number = device_number
         if device_type:
-            self.device_type = device_type
+            if device_type == 'dome':
+                self.device_type = 'dome'
+            elif device_type == 'mount':
+                self.device_type = 'telescope'
+            elif device_type == 'weather':
+                self.device_type = 'observingconditions'
+            elif device_type == 'cover':
+                self.device_type = 'covercalibrator'
+            else:
+                self.device_type = device_type
         self.is_connected = True
+        log_message(f"设置设备: 类型={self.device_type}, 编号={self.device_number}")
         
     def disconnect_device(self):
         """断开设备连接"""
@@ -66,6 +78,12 @@ class TelescopeMonitor(QThread):
                     'skybrightness', 'skytemperature', 'starfwhm', 'temperature',
                     'winddirection', 'windspeed', 'windgust'
                 ]
+            },
+            'covercalibrator': {
+                'status': ['coverstate', 'calibratorstate', 'brightness']
+            },
+            'dome': {
+                'status': ['altitude', 'azimuth', 'athome', 'atpark', 'slewing', 'shutter_status']
             }
         }
         
@@ -151,9 +169,6 @@ class TelescopeMonitor(QThread):
                         config = load_config()
                         endpoints_list = config.get("devices", {}).get("ObservingConditions", {}).get("endpoints", [])
                         
-                        # 记录请求的端点
-                        # log_message(f"正在请求气象站数据，端点列表: {endpoints_list}")
-                        
                         # 使用正确的 API URL
                         base_url = config.get("devices", {}).get("ObservingConditions", {}).get("api_url")
                         if not base_url:
@@ -174,26 +189,163 @@ class TelescopeMonitor(QThread):
                                 if data.get("ErrorNumber", 0) != 0:
                                     error_number = data.get("ErrorNumber")
                                     error_message = data.get("ErrorMessage", "Unknown error")
-                                    # log_message(f"获取气象站数据 '{prop}' 失败: [ErrorNumber={error_number}] {error_message}")
                                 else:
                                     value = data.get("Value", None)
                                     results[prop] = value
-                                    # log_message(f"气象站数据 '{prop}' = {value}")
                             except (requests.exceptions.RequestException, ValueError) as e:
-                                # log_message(f"获取气象站数据 '{prop}' 失败: {e}")
                                 continue
-                        
-                        # 详细记录气象站数据到日志
-                        # log_message(f"气象站数据获取完成，共 {len(results)} 项")
                         
                         # 发送气象站数据信号
                         if results:
-                            # print("\n气象站数据更新:")
-                            # for key, value in results.items():
-                            #     print(f"  {key}: {value}")
                             self.weather_updated.emit(results)
                     except Exception as e:
-                        # log_message(f"获取气象站数据失败: {e}")
+                        pass
+                elif self.device_type == 'covercalibrator':
+                    # 获取校准器数据
+                    try:
+                        # 从配置中获取 API URL
+                        base_url = config.get("devices", {}).get("covercalibrator", {}).get("api_url")
+                        if not base_url:
+                            base_url = "http://202.127.24.217:11111"  # 默认 URL
+                        
+                        # 获取校准器状态和亮度
+                        calibrator_url = f"{base_url}/api/v1/covercalibrator/{self.device_number}/calibratorstate?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                        brightness_url = f"{base_url}/api/v1/covercalibrator/{self.device_number}/brightness?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                        
+                        # 获取校准器状态
+                        response = requests.get(calibrator_url, timeout=5)
+                        response.raise_for_status()
+                        calibrator_data = response.json()
+                        
+                        # 获取亮度
+                        response = requests.get(brightness_url, timeout=5)
+                        response.raise_for_status()
+                        brightness_data = response.json()
+                        
+                        # 获取镜头盖状态
+                        cover_url = f"{base_url}/api/v1/covercalibrator/{self.device_number}/coverstate?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                        response = requests.get(cover_url, timeout=5)
+                        response.raise_for_status()
+                        cover_data = response.json()
+                        
+                        if cover_data.get("ErrorNumber", 0) != 0:
+                            cover_state = 5  # Error
+                        else:
+                            cover_state = cover_data.get("Value", 4)  # 默认为 Unknown (4)
+                        
+                        state_map = {
+                            0: "NotPresent",
+                            1: "Closed",
+                            2: "Moving",
+                            3: "Open",
+                            4: "Unknown",
+                            5: "Error"
+                        }
+                        
+                        status = {
+                            'coverstate': state_map.get(cover_state, "Unknown"),
+                            'raw_value': cover_state,
+                            'calibratorstate': calibrator_data.get("Value", "Unknown"),
+                            'brightness': brightness_data.get("Value", 0),
+                            'timestamp': time.time()
+                        }
+                        
+                        log_message(f"镜头盖状态: 原始值={cover_state}, 映射后={status['coverstate']}, 时间戳={time.strftime('%H:%M:%S')}")
+                        
+                        # 发送校准器状态信号
+                        self.cover_updated.emit(status)
+                    except Exception as e:
+                        log_message(f"获取校准器数据失败: {e}")
+                        status = {
+                            'coverstate': 'Error',
+                            'raw_value': 5,
+                            'calibratorstate': 'Error',
+                            'brightness': 0,
+                            'timestamp': time.time()
+                        }
+                        self.cover_updated.emit(status)
+                elif self.device_type == 'dome':
+                    try:
+                        # 获取圆顶状态数据
+                        config = load_config()
+                        base_url = config.get("devices", {}).get("dome", {}).get("api_url")
+                        if not base_url:
+                            base_url = "http://202.127.24.217:11111"  # 默认 URL
+                            
+                        status_data = {}
+                            
+                        # 获取圆顶方位角
+                        try:
+                            url = f"{base_url}/api/v1/dome/{self.device_number}/azimuth?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data = response.json()
+                            if data.get("ErrorNumber", 0) == 0:
+                                status_data['azimuth'] = data.get('Value')
+                                log_message(f"圆顶方位角: {status_data['azimuth']}")
+                        except Exception as e:
+                            log_message(f"获取圆顶方位角时出错: {str(e)}")
+                            status_data['azimuth'] = None
+                            
+                        # 获取圆顶是否在原位
+                        try:
+                            url = f"{base_url}/api/v1/dome/{self.device_number}/athome?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data = response.json()
+                            if data.get("ErrorNumber", 0) == 0:
+                                status_data['athome'] = data.get('Value')
+                                log_message(f"圆顶是否在原位: {status_data['athome']}")
+                        except Exception as e:
+                            log_message(f"获取圆顶原位状态时出错: {str(e)}")
+                            status_data['athome'] = None
+                            
+                        # 获取圆顶是否在停泊位置
+                        try:
+                            url = f"{base_url}/api/v1/dome/{self.device_number}/atpark?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data = response.json()
+                            if data.get("ErrorNumber", 0) == 0:
+                                status_data['atpark'] = data.get('Value')
+                                log_message(f"圆顶是否在停泊位置: {status_data['atpark']}")
+                        except Exception as e:
+                            log_message(f"获取圆顶停泊状态时出错: {str(e)}")
+                            status_data['atpark'] = None
+                            
+                        # 获取圆顶是否正在转动
+                        try:
+                            url = f"{base_url}/api/v1/dome/{self.device_number}/slewing?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data = response.json()
+                            if data.get("ErrorNumber", 0) == 0:
+                                status_data['slewing'] = data.get('Value')
+                                log_message(f"圆顶是否正在转动: {status_data['slewing']}")
+                        except Exception as e:
+                            log_message(f"获取圆顶转动状态时出错: {str(e)}")
+                            status_data['slewing'] = None
+                            
+                        # 获取天窗状态
+                        try:
+                            url = f"{base_url}/api/v1/dome/{self.device_number}/shutterstatus?ClientID={config.get('client_id', 1)}&ClientTransactionID={config.get('transaction_id', 1)}"
+                            response = requests.get(url, timeout=5)
+                            response.raise_for_status()
+                            data = response.json()
+                            if data.get("ErrorNumber", 0) == 0:
+                                status_data['shutter_status'] = data.get('Value')
+                                log_message(f"天窗状态: {status_data['shutter_status']}")
+                        except Exception as e:
+                            log_message(f"获取天窗状态时出错: {str(e)}")
+                            status_data['shutter_status'] = None
+                                
+                        # 发送圆顶状态更新信号
+                        if status_data:
+                            log_message(f"发送圆顶状态更新: {status_data}")
+                            self.dome_updated.emit(status_data)
+                            
+                    except Exception as e:
+                        log_message(f"获取圆顶状态时出错: {str(e)}")
                         pass
             except Exception as e:
                 # print(f"获取设备数据失败: {e}")
@@ -203,3 +355,9 @@ class TelescopeMonitor(QThread):
                 
             # 线程休眠
             time.sleep(self.update_interval) 
+
+    def start_dome_monitoring(self):
+        """启动圆顶监控"""
+        if not self.is_running:
+            self.is_running = True
+            self.start() 
