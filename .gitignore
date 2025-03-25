@@ -1,3 +1,5 @@
 nina-develop
 PyQT-Fluent-Widgets-master
 .specstory
+*.log
+*.pyc
