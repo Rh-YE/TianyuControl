@@ -1,0 +1,132 @@
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from utils import load_config, log_message
+import concurrent.futures
+import time
+
+class ApiClient:
+    """ 处理与后端API的交互 """
+    def __init__(self, base_url=None):
+        config = load_config()
+        self.base_url = base_url if base_url else config.get("api_base_url", "http://localhost:8000/api")
+        
+        # 配置会话
+        self.session = requests.Session()
+        
+        # 配置重试策略
+        retry_strategy = Retry(
+            total=3,  # 最多重试3次
+            backoff_factor=0.5,  # 增加重试间隔
+            status_forcelist=[500, 502, 503, 504]  # 这些HTTP状态码会触发重试
+        )
+        
+        # 配置适配器
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        self.timeout = (3, 10)  # 连接超时3秒，读取超时10秒
+
+    def get(self, endpoint):
+        """ 发送 GET 请求到指定端点 """
+        url = f"{self.base_url}/{endpoint}"
+        try:
+            response = self.session.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            log_message(f"API请求失败: {e}")
+            return None
+
+    def post(self, endpoint, data=None):
+        """ 发送 POST 请求到指定端点 """
+        url = f"{self.base_url}/{endpoint}"
+        try:
+            response = self.session.post(url, json=data, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            log_message(f"API请求失败: {e}")
+            return None
+
+    def get_system_info(self):
+        """ 获取系统信息 """
+        return self.get("system/info")
+
+    def get_all_devices(self):
+        """ 获取所有设备信息 """
+        return self.get("system/devices")
+
+    def search_devices(self):
+        """ 触发设备搜索 """
+        return self.post("system/devices/search")
+
+    def get_all_status(self):
+        """ 获取所有设备的状态 """
+        return self.get("system/status")
+
+    def connect_device(self, device_type):
+        """ 连接指定类型的设备 """
+        return self.post(f"{device_type}/connect")
+
+    def disconnect_device(self, device_type):
+        """ 断开指定类型的设备连接 """
+        return self.post(f"{device_type}/disconnect")
+
+    def get_device_status(self, device_type):
+        """ 获取指定类型设备的状态 """
+        return self.get(f"{device_type}/status")
+
+    # 望远镜特定方法
+    def get_telescope_coordinates(self):
+        """ 获取望远镜坐标 """
+        return self.get("telescope/coordinates")
+
+    def slew_telescope(self, ra, dec):
+        """ 控制望远镜转向指定坐标 """
+        data = {"ra": ra, "dec": dec}
+        return self.post("telescope/slew", data)
+
+    def abort_telescope_slew(self):
+        """ 中止望远镜转动 """
+        return self.post("telescope/abort")
+
+    # 电调焦特定方法
+    def get_focuser_position(self):
+        """ 获取电调焦位置 """
+        return self.get("focuser/position")
+
+    def move_focuser(self, position):
+        """ 移动电调焦到指定位置 """
+        data = {"position": position}
+        return self.post("focuser/move", data)
+
+    # 旋转器特定方法
+    def get_rotator_angle(self):
+        """ 获取旋转器角度 """
+        return self.get("rotator/angle")
+
+    def move_rotator(self, angle):
+        """ 旋转到指定角度 """
+        data = {"angle": angle}
+        return self.post("rotator/move", data)
+
+    # 气象站特定方法
+    def get_weather_data(self):
+        """ 获取气象数据 """
+        return self.get("weather/data")
+
+    # 圆顶特定方法
+    def get_dome_status(self):
+        """ 获取圆顶状态 """
+        return self.get("dome/status")
+
+    def slew_dome(self, azimuth):
+        """ 控制圆顶旋转到指定方位角 """
+        data = {"azimuth": azimuth}
+        return self.post("dome/slew", data)
+
+    def abort_dome_slew(self):
+        """ 中止圆顶转动 """
+        return self.post("dome/abort")

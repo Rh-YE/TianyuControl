@@ -37,7 +37,7 @@ class TelescopeMonitor(QWidget):
             'telescope_status': {'cn': '望远镜状态', 'en': 'Telescope Status'},
             'camera_settings': {'cn': '相机设置', 'en': 'Camera Settings'},
             'focuser_status': {'cn': '调焦器状态', 'en': 'Focuser Status'},
-            'all_sky_camera': {'cn': '全天相机', 'en': 'All Sky Camera'},
+            'all_sky_camera': {'cn': '全天相机', 'en': 'All-Sky Camera'},
             'environment': {'cn': '环境监测', 'en': 'Environment'},
             'current_time': {'cn': '当前时间', 'en': 'Current Time'},
             'light_mode': {'cn': '日间', 'en': 'Light'},
@@ -47,6 +47,7 @@ class TelescopeMonitor(QWidget):
             'device_connection': {'cn': '设备连接状态', 'en': 'Device Connection'},
             'mount': {'cn': '赤道仪', 'en': 'Mount'},
             'focuser': {'cn': '电调焦', 'en': 'Focuser'},
+            'rotator': {'cn': '消旋器', 'en': 'Rotator'},
             'weather': {'cn': '气象站', 'en': 'Weather Station'},
             'camera_temp': {'cn': '相机温度', 'en': 'Camera Temperature'},
             'readout_mode': {'cn': '读出模式', 'en': 'Readout Mode'},
@@ -62,6 +63,7 @@ class TelescopeMonitor(QWidget):
             'pressure': {'cn': '气压', 'en': 'Pressure'},
             'rain': {'cn': '雨量', 'en': 'Precipitation'},
             'sky_brightness': {'cn': '天空亮度', 'en': 'Sky Brightness'},
+            'sqm': {'cn': 'SQM', 'en': 'SQM'},
             'sky_temperature': {'cn': '天空温度', 'en': 'Sky Temperature'},
             'seeing': {'cn': '视宁度', 'en': 'Seeing'},
             'air_temp': {'cn': '气温', 'en': 'Air Temperature'},
@@ -71,11 +73,21 @@ class TelescopeMonitor(QWidget):
             'fullscreen': {'cn': '全屏显示', 'en': 'Fullscreen'},
             'status': {'cn': '状态', 'en': 'Status'},
             'running': {'cn': '运行中', 'en': 'Running'},
-            'rotator': {'cn': '消旋器', 'en': 'Rotator'},
             'ra': {'cn': '赤经', 'en': 'RA'},
             'dec': {'cn': '赤纬', 'en': 'Dec'},
             'alt': {'cn': '高度角', 'en': 'Altitude'},
-            'az': {'cn': '方位角', 'en': 'Azimuth'}
+            'az': {'cn': '方位角', 'en': 'Azimuth'},
+            'moon_phase': {'cn': '月相', 'en': 'Moon Phase'},
+            'sun_altitude': {'cn': '太阳高度', 'en': 'Sun Altitude'},
+            'sunrise_sunset': {'cn': '日出/日落', 'en': 'Sunrise/Sunset'},
+            'astronomy_twilight': {'cn': '天文晨光/昏影', 'en': 'Astronomical Twilight'},
+            'telescope_diameter': {'cn': '望远镜口径', 'en': 'Telescope Diameter'},
+            'field_of_view': {'cn': '视场大小', 'en': 'Field of View'},
+            'longitude': {'cn': '经度', 'en': 'Longitude'},
+            'latitude': {'cn': '纬度', 'en': 'Latitude'},
+            'altitude': {'cn': '海拔', 'en': 'Altitude'},
+            'water_cooler': {'cn': '水冷机', 'en': 'Water Cooler'},
+            'connect': {'cn': '连接设备', 'en': 'Connect Device'}
         }
 
         # 修改主题样式，移除加粗

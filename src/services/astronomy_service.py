@@ -12,21 +12,53 @@ import requests
 import tempfile
 import os
 from PyQt5.QtGui import QImage
+import math
+from typing import Tuple, Union
+import numpy as np
+from PyQt5.QtCore import QDateTime
+import time
 
 class AstronomyService:
     def __init__(self):
-        self.latitude = TELESCOPE_CONFIG['latitude']
+        """初始化天文服务"""
+        # 设置观测者位置
         self.longitude = TELESCOPE_CONFIG['longitude']
-        self.altitude = TELESCOPE_CONFIG['altitude']
-        self.location = EarthLocation(
-            lat=self.latitude*u.deg,
-            lon=self.longitude*u.deg,
-            height=self.altitude*u.m
+        self.latitude = TELESCOPE_CONFIG['latitude']
+        self.elevation = TELESCOPE_CONFIG['altitude']
+        
+        # 创建观测者对象
+        self.observer = Observer(
+            longitude=self.longitude * u.deg,
+            latitude=self.latitude * u.deg,
+            elevation=self.elevation * u.m
         )
-        self.timezone = pytz.timezone(TIMEZONE)
-        self.observer = Observer(location=self.location, timezone=self.timezone)
+        
+        # 设置时区
+        self.timezone = timezone(timedelta(hours=8))  # UTC+8
+        
+        # DSS服务配置
         self.dss_url = "https://archive.stsci.edu/cgi-bin/dss_search"
-        self.temp_dir = tempfile.gettempdir()
+        self.temp_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'temp')
+        os.makedirs(self.temp_dir, exist_ok=True)
+        
+        # 缓存管理
+        self.image_cache = []  # 存储图像文件路径和时间戳的列表
+        self.max_cache_size = 2  # 最多缓存2张图像
+
+    def _manage_cache(self, new_image_path):
+        """管理图像缓存"""
+        # 添加新图像到缓存
+        self.image_cache.append((new_image_path, time.time()))
+        
+        # 如果缓存超过限制，删除最早的图像
+        while len(self.image_cache) > self.max_cache_size:
+            oldest_image_path, _ = self.image_cache.pop(0)
+            try:
+                if os.path.exists(oldest_image_path):
+                    os.remove(oldest_image_path)
+                    print(f"已删除缓存图像: {oldest_image_path}")
+            except Exception as e:
+                print(f"删除缓存图像失败: {e}")
 
     def get_current_time(self):
         """获取当前时间（UTC和UTC+8）"""
@@ -93,6 +125,20 @@ class AstronomyService:
                 'evening': "计算错误"
             }
 
+    def calculate_julian_date(self, utc_time: QDateTime) -> float:
+        """计算儒略日"""
+        try:
+            # 转换为ISO格式的字符串
+            iso_time = utc_time.toString("yyyy-MM-ddThh:mm:ss")
+            
+            # 使用astropy计算儒略日
+            t = Time(iso_time, format='isot', scale='utc')
+            return t.jd
+            
+        except Exception as e:
+            print(f"计算儒略日失败: {e}")
+            return 0.0
+
     def calculate_moon_phase(self):
         """计算月相"""
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -103,87 +149,80 @@ class AstronomyService:
         phase = (days % synodic_month) / synodic_month
         return round(phase, 2)
 
-    def parse_coordinates(self, ra_str, dec_str):
-        """
-        解析赤经赤纬字符串
-        :param ra_str: 赤经字符串 (HH:MM:SS)
-        :param dec_str: 赤纬字符串 (+/-DD:MM:SS)
-        :return: (ra_deg, dec_deg) 转换后的度数
-        """
+    def _parse_time_format(self, time_str: Union[str, float]) -> float:
+        """将时角格式（[+-]HH:MM:SS）转换为度数"""
         try:
-            # 解析赤经
-            ra_parts = ra_str.split(':')
-            if len(ra_parts) == 3:
-                ra_hours = float(ra_parts[0])
-                ra_minutes = float(ra_parts[1])
-                ra_seconds = float(ra_parts[2])
-                ra_deg = (ra_hours + ra_minutes/60 + ra_seconds/3600) * 15  # 转换为度
+            # 如果已经是数字，直接返回
+            if isinstance(time_str, (int, float)):
+                return float(time_str)
+                
+            # 移除所有空格
+            time_str = str(time_str).strip()
+            
+            # 检查是否已经是度数格式
+            if time_str.replace('.', '', 1).replace('-', '', 1).isdigit():
+                return float(time_str)
+            
+            # 处理加号前缀
+            is_negative = time_str.startswith('-')
+            time_str = time_str.lstrip('+-')
+            
+            # 解析时角格式
+            parts = time_str.split(':')
+            if len(parts) == 3:
+                hours = float(parts[0])
+                minutes = float(parts[1])
+                seconds = float(parts[2])
+                
+                # 计算总度数
+                total_degrees = hours + minutes/60 + seconds/3600
+                if is_negative:
+                    total_degrees = -total_degrees
+                    
+                return total_degrees
             else:
-                raise ValueError("赤经格式错误")
-
-            # 解析赤纬
-            dec_parts = dec_str.split(':')
-            if len(dec_parts) == 3:
-                dec_sign = 1 if dec_str[0] != '-' else -1
-                dec_degrees = float(dec_parts[0].replace('+', ''))
-                dec_minutes = float(dec_parts[1])
-                dec_seconds = float(dec_parts[2])
-                dec_deg = dec_sign * (abs(dec_degrees) + dec_minutes/60 + dec_seconds/3600)
-            else:
-                raise ValueError("赤纬格式错误")
-
-            return ra_deg, dec_deg
+                raise ValueError(f"无效的时角格式: {time_str}")
         except Exception as e:
-            print(f"坐标解析错误: {e}")
-            return None, None
+            raise ValueError(f"坐标格式转换错误: {e}")
 
-    def get_dss_image(self, ra, dec, size=15):
-        """
-        获取DSS星图
-        :param ra: 赤经 (格式: HH:MM:SS)
-        :param dec: 赤纬 (格式: DD:MM:SS)
-        :param size: 图像大小（角分）
-        :return: 图像路径或None
-        """
+    def get_dss_image(self, ra: Union[str, float], dec: Union[str, float]) -> str:
+        """获取DSS图像"""
         try:
-            # 解析坐标
-            ra_deg, dec_deg = self.parse_coordinates(ra, dec)
-            if ra_deg is None or dec_deg is None:
-                return None
-
-            # 生成安全的文件名
-            safe_ra = f"{ra_deg:.6f}".replace('.', '_')
-            safe_dec = f"{dec_deg:.6f}".replace('.', '_')
-            temp_path = os.path.join(self.temp_dir, f"dss_image_{safe_ra}_{safe_dec}.gif")
+            # 转换坐标为度数
+            ra_deg = self._parse_time_format(ra)
+            dec_deg = self._parse_time_format(dec)
             
-            # 检查缓存
-            if os.path.exists(temp_path):
-                return temp_path
-            
-            # 构建请求参数
+            # 构建DSS请求参数
             params = {
                 'r': ra_deg,
                 'd': dec_deg,
                 'e': 'J2000',
-                'h': size,
-                'w': size,
-                'f': 'gif',
-                'v': 'poss2ukstu_red'  # 使用POSS2/UKSTU Red作为默认调查
+                'h': 15.0,  # 图像高度(角分)
+                'w': 15.0,  # 图像宽度(角分)
+                'f': 'gif',  # 输出格式
+                'v': 1,     # DSS版本
+                'format': 'GIF'
             }
             
-            print(f"请求DSS图像: RA={ra_deg:.6f}°, Dec={dec_deg:.6f}°")
-            
             # 发送请求获取图像
-            response = requests.get(self.dss_url, params=params)
+            response = requests.get(self.dss_url, params=params, timeout=10)
             if response.status_code == 200:
                 # 保存图像到临时文件
-                with open(temp_path, 'wb') as f:
+                temp_file = os.path.join(self.temp_dir, f'dss_image_{ra_deg:.2f}_{dec_deg:.2f}.gif')
+                with open(temp_file, 'wb') as f:
                     f.write(response.content)
-                return temp_path
+                print(f"DSS图像已保存到: {temp_file}")
+                
+                # 管理缓存
+                self._manage_cache(temp_file)
+                
+                return temp_file
+            else:
+                print(f"获取DSS图像失败: HTTP {response.status_code}")
+                return None
             
-            return None
         except Exception as e:
-            print(f"获取DSS图像失败: {e}")
+            print(f"获取DSS图像错误: {e}")
             return None
 
     def calculate_position_angle(self, ra_str, dec_str, rotator_angle):

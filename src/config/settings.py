@@ -41,12 +41,12 @@ THEMES = {
 
 # 字体大小配置
 FONT_SIZES = {
-    'small': 24,          # 次要信息（如提示文本）
-    'normal': 26,         # 普通文本
-    'medium': 30,         # 重要数值
+    'small': 14,          # 次要信息（如提示文本）
+    'normal': 16,         # 普通文本
+    'medium': 20,         # 重要数值
     'large': 72,          # 时间显示
-    'title': 28,          # 标签标题
-    'group_title': 30     # 组标题
+    'title': 18,          # 标签标题
+    'group_title': 20     # 组标题
 }
 
 # 布局配置
