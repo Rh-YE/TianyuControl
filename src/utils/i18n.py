@@ -85,7 +85,23 @@ class I18nManager:
             'filter_l': {'cn': 'L滤光片', 'en': 'L-band'},
             'moving_yes': {'cn': '是', 'en': 'Yes'},
             'moving_no': {'cn': '否', 'en': 'No'},
-            'all_sky_camera_tip': {'cn': '全天相机历史图片，右下角全屏放大查看', 'en': 'All Sky Camera History, Click Bottom-Right to Fullscreen'}
+            'all_sky_camera_tip': {'cn': '全天相机历史图片，右下角全屏放大查看', 'en': 'All Sky Camera History, Click Bottom-Right to Fullscreen'},
+            'gps_time': {'cn': 'GPS时间', 'en': 'GPS Time'},
+            'dome_status': {'cn': '圆顶状态', 'en': 'Dome Status'},
+            'dome_angle': {'cn': '圆顶方位角', 'en': 'Dome Azimuth'},
+            'shutter_status': {'cn': '天窗状态', 'en': 'Shutter Status'},
+            'dome_slewing': {'cn': '圆顶转动', 'en': 'Dome Slewing'},
+            'mirror_cover_status': {'cn': '主镜罩状态', 'en': 'Mirror Cover Status'},
+            'cover_status': {'cn': '镜罩状态', 'en': 'Cover Status'},
+            'altaz_drive_status': {'cn': '高度方位驱动器状态', 'en': 'Alt-Az Drive Status'},
+            'drive_power': {'cn': '驱动器电源', 'en': 'Drive Power'},
+            'drive_enabled': {'cn': '驱动器使能', 'en': 'Drive Enabled'},
+            'motor_status': {'cn': '电机状态', 'en': 'Motor Status'},
+            'enabled': {'cn': '已启用', 'en': 'Enabled'},
+            'disabled': {'cn': '已禁用', 'en': 'Disabled'},
+            'normal': {'cn': '正常', 'en': 'Normal'},
+            'opening': {'cn': '正在打开', 'en': 'Opening'},
+            'closing': {'cn': '正在关闭', 'en': 'Closing'}
         }
 
     def get_text(self, key, with_unit=None):

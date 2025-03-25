@@ -126,14 +126,28 @@ class MainWindow(QWidget):
         self.telescope_status.add_item('az', '120°', 'medium-text')
         self.telescope_status.add_item('status', i18n.get_text('tracking'))
         middle_layout.addWidget(self.telescope_status.get_widget())
-
-        # 相机设置组
-        self.camera_settings = InfoGroup('camera_settings')
-        self.camera_settings.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
-        self.camera_settings.add_item('camera_temp', '-30.0°C', 'medium-text')
-        self.camera_settings.add_item('readout_mode', i18n.get_text('high_dynamic_range_mode'))
-        self.camera_settings.add_item('filter_position', i18n.get_text('filter_r'))
-        middle_layout.addWidget(self.camera_settings.get_widget())
+        
+        # 新增高度方位驱动器状态组
+        self.altaz_drive_status = InfoGroup('altaz_drive_status')
+        self.altaz_drive_status.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        self.altaz_drive_status.add_item('drive_power', i18n.get_text('enabled'), 'medium-text')
+        self.altaz_drive_status.add_item('drive_enabled', i18n.get_text('enabled'), 'medium-text')
+        self.altaz_drive_status.add_item('motor_status', i18n.get_text('normal'), 'medium-text')
+        middle_layout.addWidget(self.altaz_drive_status.get_widget())
+        
+        # 新增圆顶状态组
+        self.dome_status = InfoGroup('dome_status')
+        self.dome_status.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        self.dome_status.add_item('dome_angle', '180°', 'medium-text')
+        self.dome_status.add_item('shutter_status', i18n.get_text('open'), 'medium-text')
+        self.dome_status.add_item('dome_slewing', i18n.get_text('no'), 'medium-text')
+        middle_layout.addWidget(self.dome_status.get_widget())
+        
+        # 新增主镜罩状态组
+        self.mirror_cover_status = InfoGroup('mirror_cover_status')
+        self.mirror_cover_status.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        self.mirror_cover_status.add_item('cover_status', i18n.get_text('closed'), 'medium-text')
+        middle_layout.addWidget(self.mirror_cover_status.get_widget())
 
         # 调焦器状态组
         self.focuser_status = InfoGroup('focuser_status')
@@ -188,6 +202,8 @@ class MainWindow(QWidget):
         self.time_group = InfoGroup('current_time')
         self.time_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         self.time_group.add_item('utc8', '', 'medium-text')
+        # 新增GPS时间
+        self.time_group.add_item('gps_time', '', 'medium-text')
         self.time_group.add_item('sunrise_sunset', '', 'medium-text')
         self.time_group.add_item('twilight', '', 'medium-text')
         self.time_group.add_item('moon_phase', '', 'medium-text')
@@ -241,11 +257,6 @@ class MainWindow(QWidget):
         # 更新望远镜状态组的动态值
         self.telescope_status.update_text()
         self.telescope_status.pairs['status'].set_value(i18n.get_text('tracking'))
-        
-        # 更新相机设置组的动态值
-        self.camera_settings.update_text()
-        self.camera_settings.pairs['readout_mode'].set_value(i18n.get_text('high_dynamic_range_mode'))
-        self.camera_settings.pairs['filter_position'].set_value(i18n.get_text('filter_r'))
         
         # 更新调焦器状态组的动态值
         self.focuser_status.update_text()
@@ -303,7 +314,11 @@ class MainWindow(QWidget):
         # 更新时间
         time_info = astronomy_service.get_current_time()
         self.time_group.pairs['utc8'].set_value(time_info['utc8'])
-
+        
+        # 更新GPS时间
+        if 'gps_time' in time_info:
+            self.time_group.pairs['gps_time'].set_value(time_info['gps_time'])
+        
         # 更新太阳信息
         sun_info = astronomy_service.get_sun_info()
         self.time_group.pairs['sunrise_sunset'].set_value(
