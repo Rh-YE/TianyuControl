@@ -517,7 +517,7 @@ class TelescopeMonitor(QWidget):
         all_day_camera_group = QGroupBox('全天相机')
         all_day_camera_layout = QVBoxLayout()
         # all_day_camera_layout.addWidget(QLabel('图片显示区域'))  # 修改为 QLabel 显示图片
-        all_day_camera_layout.addWidget(QLabel('<img src="C:/Users/90811/Downloads/cutout2.jpg"/>'))  # 添加图片
+        all_day_camera_layout.addWidget(QLabel('<img src=r"src\ui\cutout2.jpg"/>'))  # 添加图片
         # all_day_camera_layout.addWidget(QLabel('视频显示区域'))
         
         # 添加视频显示区域
