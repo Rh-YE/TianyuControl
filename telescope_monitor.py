@@ -54,7 +54,7 @@ class TelescopeMonitor(QWidget):
             'filter_position': {'cn': '滤光片位置', 'en': 'Filter Position'},
             'position': {'cn': '调焦器当前位置/总行程', 'en': 'Current/Total Position'},
             'angle': {'cn': '消旋器角度', 'en': 'Rotator Angle'},
-            'moving': {'cn': '是否在移动', 'en': 'Moving'},
+            'moving': {'cn': '电调焦是否在移动', 'en': 'Moving'},
             'temperature': {'cn': '温度', 'en': 'Temperature'},
             'last_focus': {'cn': '上次对焦时间', 'en': 'Last Focus Time'},
             'cloud_cover': {'cn': '红外云量', 'en': 'Cloud Cover'},
@@ -491,7 +491,7 @@ class TelescopeMonitor(QWidget):
 
         # 是否在移动
         row_layout_moving = QHBoxLayout()
-        row_layout_moving.addWidget(QLabel('是否在移动'))
+        row_layout_moving.addWidget(QLabel('电调是否在移动'))
         row_layout_moving.addWidget(QLabel('是'))  # 实际数值
         focuser_status_layout.addLayout(row_layout_moving)
         
@@ -500,12 +500,6 @@ class TelescopeMonitor(QWidget):
         row_layout_temperature.addWidget(QLabel('温度'))
         row_layout_temperature.addWidget(QLabel('-10.0 °C'))  # 实际数值
         focuser_status_layout.addLayout(row_layout_temperature)
-
-        # 上次对焦时间
-        row_layout_focus_time = QHBoxLayout()
-        row_layout_focus_time.addWidget(QLabel('上次对焦时间'))
-        row_layout_focus_time.addWidget(QLabel('2025-02-23 12:00:00'))  # 实际数值
-        focuser_status_layout.addLayout(row_layout_focus_time)
 
         focuser_status_group.setLayout(focuser_status_layout)
         middle_layout.addWidget(focuser_status_group)

@@ -89,6 +89,20 @@ class ThemeManager:
                 padding: 0px;
                 border-radius: 4px;
             }}
+            .success-button {{
+                background-color: #28a745 !important;
+                color: white !important;
+            }}
+            .success-button:hover {{
+                background-color: #218838 !important;
+            }}
+            .error-button {{
+                background-color: #dc3545 !important;
+                color: white !important;
+            }}
+            .error-button:hover {{
+                background-color: #c82333 !important;
+            }}
         """
 
     def switch_theme(self, theme_name):

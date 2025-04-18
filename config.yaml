@@ -87,12 +87,19 @@
                 "temperature",
                 "status_bits"
             ],
-            "port": "COM21",
+            "port": "COM20",
             "baudrate": 4800,
             "bytesize": 8,
             "parity": "N",
             "stopbits": 2,
             "timeout": 1
+        },
+        "allsky_camera": {
+            "enabled": true,
+            "image_path": "D:\\software_sq\\astro\\TianyuControl-main\\test_allsky_pic",
+            "image_name": "test001",
+            "image_extension": ".png",
+            "refresh_interval": 5
         }
     }
 }

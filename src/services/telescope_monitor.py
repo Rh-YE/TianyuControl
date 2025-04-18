@@ -348,8 +348,6 @@ class TelescopeMonitor(QThread):
                         log_message(f"获取圆顶状态时出错: {str(e)}")
                         pass
             except Exception as e:
-                # print(f"获取设备数据失败: {e}")
-                # log_message(f"获取设备数据失败: {e}")
                 time.sleep(0.5)  # 发生错误时等待0.5秒再重试
                 continue
                 
