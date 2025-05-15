@@ -277,13 +277,24 @@ class DeviceControl:
             
             # 如果没有设备，添加一个默认选项
             if not filtered_devices:
-                default_device = {
-                    'DeviceName': 'ASCOM CoverCalibrator Simulator',
+                if self.device_id == 'cover':
+                    # 特殊处理镜头盖设备
+                    default_device = {
+                        'DeviceName': 'ASCOM CoverCalibrator Simulator',
+                            'DeviceType': 'CoverCalibrator',  # 确保类型是CoverCalibrator而不是device_type
+                            'DeviceNumber': 0,
+                            'ApiVersion': '1.0'
+                        }
+                    display_name = f"{default_device['DeviceName']} (CoverCalibrator #0)"
+                else:
+                    default_device = {
+                        'DeviceName': f"ASCOM {device_type} Simulator",
                     'DeviceType': device_type,
                     'DeviceNumber': 0,
                     'ApiVersion': '1.0'
                 }
                 display_name = f"{default_device['DeviceName']} ({device_type} #0)"
+                
                 print(f"添加默认设备到下拉菜单: {display_name}")
                 self.combo.addItem(display_name, default_device)
             
@@ -318,6 +329,8 @@ class DeviceControl:
 
     def toggle_connection(self):
         """切换设备连接状态"""
+        old_state = self.is_connected
+        
         if self.is_connected:
             # 断开连接
             if self.device_id == 'cooler':
@@ -385,6 +398,17 @@ class DeviceControl:
                         # 刷新样式
                         self.connect_button.style().unpolish(self.connect_button)
                         self.connect_button.style().polish(self.connect_button)
+        
+        # 如果连接状态发生变化并且设置了回调函数，则调用回调函数
+        if old_state != self.is_connected and hasattr(self, 'connect_status_changed') and callable(self.connect_status_changed):
+            # 获取当前选中的设备信息
+            current_index = self.combo.currentIndex()
+            device_data = None
+            if current_index >= 0:
+                device_data = self.combo.itemData(current_index)
+            
+            # 调用回调函数，传递设备标识、连接状态和设备数据
+            self.connect_status_changed(self.device_id, self.is_connected, device_data)
 
     def connect_to_cooler(self):
         """连接到水冷机"""
@@ -861,6 +885,16 @@ class DeviceControl:
             import traceback
             traceback.print_exc()
 
+    def set_angles(self, dec_angle, rotator_angle):
+        """设置角度值"""
+        # 无论 rotator_angle 是什么值，都直接更新组件的旋转角度
+        self.rotator_angle = rotator_angle
+        # 记录当前值，用于调试目的
+        self.last_rotator_angle = rotator_angle
+            
+        self.dec_angle = dec_angle
+        self.update()
+
 class InfoGroup:
     """信息组组件"""
     def __init__(self, title, items=None):
@@ -963,8 +997,12 @@ class AngleVisualizer(QWidget):
 
     def set_angles(self, dec_angle, rotator_angle):
         """设置角度值"""
-        self.dec_angle = dec_angle
+        # 无论 rotator_angle 是什么值，都直接更新组件的旋转角度
         self.rotator_angle = rotator_angle
+        # 记录当前值，用于调试目的
+        self.last_rotator_angle = rotator_angle
+            
+        self.dec_angle = dec_angle
         self.update()
 
     def paintEvent(self, event):

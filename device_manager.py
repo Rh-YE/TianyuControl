@@ -7,7 +7,6 @@ class DeviceManager:
         self.device_type = device_type
         self.config = load_config()
         
-        # 检查设备类型是否在配置中存在，如果不存在则创建一个默认配置
         if device_type not in self.config.get("devices", {}):
             self.config["devices"][device_type] = {
                 "enabled": True,
@@ -84,11 +83,22 @@ class Dome(DeviceManager):
 class Cooler(DeviceManager):
     def __init__(self):
         super().__init__("cooler")
+        self.device = {
+            'DeviceName': '水冷机设备',
+            'DeviceType': 'Cooler',
+            'DeviceNumber': 0,
+            'ApiVersion': '1.0',
+            'IsSerialDevice': True
+        }
+        print(f"水冷机设备配置完成: {self.device['DeviceName']}")
+        
+    def connect(self):
+        """水冷机设备的连接会在UI中通过串口完成"""
+        return True
 
 class UPS(DeviceManager):
     def __init__(self):
         super().__init__("ups")
-        # 标记为串口设备，这样主程序知道需要通过串口连接它
         self.device = {
             'DeviceName': 'UPS Power Supply',
             'DeviceType': 'UPS',
@@ -100,7 +110,6 @@ class UPS(DeviceManager):
         
     def connect(self):
         """UPS设备的连接会在UI中通过串口完成"""
-        # 串口连接在UI中处理，这里只返回True表示配置已准备好
         return True
 
 

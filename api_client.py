@@ -119,3 +119,102 @@ class AlpacaClient:
         """ 获取赤经和赤纬 """
         results = self.get_multiple('telescope', 0, ['rightascension', 'declination'])
         return results.get('rightascension'), results.get('declination')
+        
+    def put(self, device_type, device_number, endpoint, data=None):
+        """ 发送 PUT 请求到指定设备类型和端点 """
+        url = f"{self.base_url}/api/v1/{device_type}/{device_number}/{endpoint}"
+        params = {"ClientID": self.client_id, "ClientTransactionID": self.transaction_id}
+        
+        try:
+            log_message(f"发送PUT请求：{url}，参数：{params}，数据：{data}")
+            print(f"发送PUT请求：{url}，参数：{params}")
+            start_time = time.time()
+            # 增加超时时间，以防默认超时时间太短
+            timeout = (5, 30)  # 连接超时5秒，读取超时30秒
+            response = self.session.put(url, params=params, data=data, timeout=timeout)
+            elapsed_time = time.time() - start_time
+            log_message(f"请求耗时：{elapsed_time:.2f}秒，状态码：{response.status_code}")
+            print(f"请求耗时：{elapsed_time:.2f}秒，状态码：{response.status_code}")
+            
+            response.raise_for_status()
+            data = response.json()
+            log_message(f"API响应：{data}")
+            print(f"API响应：{data}")
+            
+            if data["ErrorNumber"] == 0:
+                return True
+            else:
+                log_message(f"API 失败: {data['ErrorMessage']}，错误码：{data['ErrorNumber']}")
+                print(f"API 失败: {data['ErrorMessage']}，错误码：{data['ErrorNumber']}")
+                return False
+        except requests.exceptions.Timeout as e:
+            log_message(f"连接超时: {e}")
+            print(f"连接超时: {e}")
+            return False
+        except requests.exceptions.ConnectionError as e:
+            log_message(f"连接错误: {e}")
+            print(f"连接错误: {e}")
+            return False
+        except requests.exceptions.RequestException as e:
+            log_message(f"连接 API 失败: {e}")
+            print(f"连接 API 失败: {e}")
+            return False
+        except Exception as e:
+            log_message(f"未知错误: {e}")
+            print(f"未知错误: {e}")
+            return False
+            
+    def open_dome_shutter(self, device_number=0):
+        """ 打开圆顶 """
+        log_message(f"准备打开圆顶天窗，设备号：{device_number}")
+        print(f"准备打开圆顶天窗，设备号：{device_number}")
+        result = self.put('dome', device_number, 'openshutter')
+        log_message(f"打开圆顶天窗请求结果：{result}")
+        print(f"打开圆顶天窗请求结果：{result}")
+        return result
+        
+    def close_dome_shutter(self, device_number=0):
+        """ 关闭圆顶 """
+        log_message(f"准备关闭圆顶天窗，设备号：{device_number}")
+        print(f"准备关闭圆顶天窗，设备号：{device_number}")
+        result = self.put('dome', device_number, 'closeshutter')
+        log_message(f"关闭圆顶天窗请求结果：{result}")
+        print(f"关闭圆顶天窗请求结果：{result}")
+        return result
+        
+    def open_cover(self, device_number=0):
+        """ 打开镜头盖 """
+        log_message(f"准备打开镜头盖，设备号：{device_number}")
+        print(f"准备打开镜头盖，设备号：{device_number}")
+        result = self.put('covercalibrator', device_number, 'opencover')
+        log_message(f"打开镜头盖请求结果：{result}")
+        print(f"打开镜头盖请求结果：{result}")
+        return result
+        
+    def close_cover(self, device_number=0):
+        """ 关闭镜头盖 """
+        log_message(f"准备关闭镜头盖，设备号：{device_number}")
+        print(f"准备关闭镜头盖，设备号：{device_number}")
+        result = self.put('covercalibrator', device_number, 'closecover')
+        log_message(f"关闭镜头盖请求结果：{result}")
+        print(f"关闭镜头盖请求结果：{result}")
+        return result
+        
+    def move_focuser(self, device_number=0, position=0):
+        """ 移动电调焦到指定位置 """
+        log_message(f"准备移动电调焦到位置{position}，设备号：{device_number}")
+        print(f"准备移动电调焦到位置{position}，设备号：{device_number}")
+        data = {"Position": int(position)}
+        result = self.put('focuser', device_number, 'move', data)
+        log_message(f"移动电调焦请求结果：{result}")
+        print(f"移动电调焦请求结果：{result}")
+        return result
+        
+    def halt_focuser(self, device_number=0):
+        """ 停止电调焦移动 """
+        log_message(f"准备停止电调焦移动，设备号：{device_number}")
+        print(f"准备停止电调焦移动，设备号：{device_number}")
+        result = self.put('focuser', device_number, 'halt')
+        log_message(f"停止电调焦请求结果：{result}")
+        print(f"停止电调焦请求结果：{result}")
+        return result

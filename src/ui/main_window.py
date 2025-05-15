@@ -2,9 +2,9 @@
 主窗口模块
 """
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                           QGroupBox, QLabel, QPushButton, QSizePolicy)
+                           QGroupBox, QLabel, QPushButton, QSizePolicy, QSlider, QLineEdit)
 from PyQt5.QtCore import Qt, QTimer, QDateTime
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap, QIntValidator, QFont
 from src.ui.components import LabelPair, DeviceControl, InfoGroup, ThemeButton, AngleVisualizer
 from src.utils.i18n import i18n
 from src.utils.theme_manager import theme_manager
@@ -27,6 +27,9 @@ class MainWindow(QMainWindow):
         self.dss_fetcher = DSSImageFetcher()
         self.dss_fetcher.image_ready.connect(self.update_dss_image)
         
+        # 标记是否已添加默认镜头盖设备
+        self.has_added_default_cover_device = False
+        
         self.init_ui(telescope_devices)
         self.init_timer()
 
@@ -38,11 +41,14 @@ class MainWindow(QMainWindow):
         # 创建菜单栏
         self.menubar = self.menuBar()
         
+        # 创建连接菜单
+        self.connect_menu = self.menubar.addMenu(i18n.get_text('connection'))
+        
         # 创建设置菜单
-        self.settings_menu = self.menubar.addMenu('设置')
+        self.settings_menu = self.menubar.addMenu(i18n.get_text('settings'))
         
         # 创建主题子菜单
-        self.theme_menu = self.settings_menu.addMenu('主题')
+        self.theme_menu = self.settings_menu.addMenu(i18n.get_text('theme'))
         
         # 创建主题菜单项
         self.light_action = self.theme_menu.addAction('☀️ ' + i18n.get_text('light_mode'))
@@ -65,7 +71,7 @@ class MainWindow(QMainWindow):
         # 添加语言切换菜单项
         self.language_action = self.settings_menu.addAction(i18n.get_text('language'))
         self.language_action.triggered.connect(self.change_language)
-
+        
         # 主布局
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(
@@ -93,12 +99,21 @@ class MainWindow(QMainWindow):
         self.basic_info.add_item('altitude_text', f"{TELESCOPE_CONFIG['altitude']}m")
         left_layout.addWidget(self.basic_info.get_widget())
 
+        # 望远镜状态组
+        self.telescope_status = InfoGroup('telescope_status')
+        self.telescope_status.layout.setSpacing(LAYOUT_CONFIG['group_spacing'])
+        self.telescope_status.add_item('ra', '12:00:00', 'large-text')
+        self.telescope_status.add_item('dec', '+30:00:00', 'large-text')
+        self.telescope_status.add_item('alt', '60°', 'medium-text')
+        self.telescope_status.add_item('az', '120°', 'medium-text')
+        self.telescope_status.add_item('telescope_state', i18n.get_text('status_unknown'), 'medium-text')
+        self.telescope_status.add_item('motor_enable', i18n.get_text('motor_disabled'), 'medium-text')
+        self.telescope_status.add_item('cover_status', i18n.get_text('cover_status_unknown'), 'medium-text')
+        self.telescope_status.add_item('frame_dec_angle', '0.0°', 'medium-text')
+        left_layout.addWidget(self.telescope_status.get_widget())
+        
         # 设备控制组件列表
         self.device_controls = []
-        
-        # 设备连接状态组
-        self.device_group = InfoGroup('device_connection')
-        self.device_group.layout.setSpacing(int(LAYOUT_CONFIG['group_spacing'] * 1.5))  # 增加设备控制组件之间的间距，确保是整数
         
         # 添加望远镜设备控制组件（新的带下拉菜单的版本）
         self.mount_control = DeviceControl('mount', i18n.get_text('mount'))
@@ -112,7 +127,8 @@ class MainWindow(QMainWindow):
         self.mount_control.signals.status_updated.connect(self.update_telescope_status)
         # 连接设备列表更新信号
         self.mount_control.telescope_monitor.devices_updated.connect(self.mount_control.update_devices)
-        self.device_group.layout.addLayout(self.mount_control.get_layout())
+        # 添加连接状态变化回调
+        self.mount_control.connect_status_changed = self.update_device_connect_status
         self.device_controls.append(self.mount_control)
         
         # 添加其他设备控制组件
@@ -169,8 +185,22 @@ class MainWindow(QMainWindow):
                     device_control.telescope_monitor.devices_updated.connect(device_control.update_devices)
                     # 如果有设备列表，更新到下拉菜单
                     if telescope_devices:
-                        device_control.update_devices(telescope_devices)
+                        found_cover_devices = [d for d in telescope_devices if d.get('DeviceType') == 'CoverCalibrator']
+                        if found_cover_devices:
+                            device_control.update_devices(found_cover_devices)
+                            print(f"找到并添加镜头盖设备: {len(found_cover_devices)}个")
+                        else:
+                            print("在设备列表中未找到镜头盖设备，添加默认设备")
+                            # 如果没有设备列表，添加一个默认设备
+                            default_devices = [{
+                                'DeviceName': 'ASCOM CoverCalibrator Simulator',
+                                'DeviceType': 'CoverCalibrator',
+                                'DeviceNumber': 0,
+                                'ApiVersion': '1.0'
+                            }]
+                            device_control.update_devices(default_devices)
                     else:
+                        print("没有设备列表，添加默认镜头盖设备")
                         # 如果没有设备列表，添加一个默认设备
                         default_devices = [{
                             'DeviceName': 'ASCOM CoverCalibrator Simulator',
@@ -215,10 +245,10 @@ class MainWindow(QMainWindow):
                 device_control.signals.status_updated.connect(self.update_ups_status)
                 # 获取可用串口列表并更新到下拉菜单
                 self.update_serial_ports(device_control)
+            
+            # 添加连接状态变化回调
+            device_control.connect_status_changed = self.update_device_connect_status
             self.device_controls.append(device_control)
-            self.device_group.layout.addLayout(device_control.get_layout())
-        
-        left_layout.addWidget(self.device_group.get_widget())
 
         # 中间栏
         middle_layout = QVBoxLayout()
@@ -231,18 +261,6 @@ class MainWindow(QMainWindow):
         # 左侧内容区（放置望远镜状态、圆顶状态和调焦器状态）
         left_content_layout = QVBoxLayout()
         left_content_layout.setSpacing(LAYOUT_CONFIG['section_spacing'])
-        
-        # 望远镜状态组
-        self.telescope_status = InfoGroup('telescope_status')
-        self.telescope_status.layout.setSpacing(LAYOUT_CONFIG['group_spacing'])
-        self.telescope_status.add_item('ra', '12:00:00', 'large-text')
-        self.telescope_status.add_item('dec', '+30:00:00', 'large-text')
-        self.telescope_status.add_item('alt', '60°', 'medium-text')
-        self.telescope_status.add_item('az', '120°', 'medium-text')
-        self.telescope_status.add_item('telescope_state', i18n.get_text('status_unknown'), 'medium-text')
-        self.telescope_status.add_item('motor_enable', i18n.get_text('motor_disabled'), 'medium-text')
-        self.telescope_status.add_item('cover_status', i18n.get_text('cover_status_unknown'), 'medium-text')
-        self.telescope_status.add_item('frame_dec_angle', '0.0°', 'medium-text')
         
         # 圆顶和调焦器状态水平布局
         dome_focuser_layout = QHBoxLayout()
@@ -258,9 +276,9 @@ class MainWindow(QMainWindow):
         self.focuser_status = InfoGroup('focuser_status')
         self.focuser_status.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         self.focuser_status.add_item('position', '34000/60000', 'medium-text')
+        self.focuser_status.add_item('temperature', '--°C', 'medium-text')
         self.focuser_status.add_item('angle', '0.0°', 'medium-text')
         self.focuser_status.add_item('moving', i18n.get_text('moving_yes'))
-        self.focuser_status.add_item('temperature', '-10.0°C', 'medium-text')
         
         # 设置最小宽度，确保文字显示完整
         focuser_widget = self.focuser_status.get_widget()
@@ -274,56 +292,153 @@ class MainWindow(QMainWindow):
         dome_widget.setMinimumWidth(200)
         dome_widget.setContentsMargins(10, 5, 10, 5)
         
-        # 添加圆顶和调焦器到水平布局，使用不同的比例
-        dome_focuser_layout.addWidget(dome_widget, 1)  # 圆顶状态比例为1
-        dome_focuser_layout.addWidget(focuser_widget, 1)  # 调焦器状态比例为1
-        
-        # 添加望远镜状态和圆顶/调焦器布局到左侧内容区
-        left_content_layout.addWidget(self.telescope_status.get_widget())
-        left_content_layout.addLayout(dome_focuser_layout)
-        
-        # 右侧内容区（放置水冷机和UPS电源状态）
-        right_content_layout = QVBoxLayout()
-        right_content_layout.setSpacing(LAYOUT_CONFIG['section_spacing'])
-        
         # 水冷机状态组
         self.expanded_cooler_status_group = InfoGroup('cooler_status')
         self.expanded_cooler_status_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         self.expanded_cooler_status_group.add_item('cooler_temperature', '--°C')
         self.expanded_cooler_status_group.add_item('cooler_running', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_heating', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_cooling', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_flow_alarm', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_pump', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_temp_alarm', i18n.get_text('indicator_off'))
-        self.expanded_cooler_status_group.add_item('cooler_level_alarm', i18n.get_text('indicator_off'))
+        self.expanded_cooler_status_group.add_item('cooler_flow_alarm', i18n.get_text('alarm_off'))
+        self.expanded_cooler_status_group.add_item('cooler_temp_alarm', i18n.get_text('alarm_off'))
+        self.expanded_cooler_status_group.add_item('cooler_level_alarm', i18n.get_text('alarm_off'))
         self.expanded_cooler_status_group.add_item('cooler_power', i18n.get_text('indicator_off'))
         
         # UPS状态组
         self.expanded_ups_status_group = InfoGroup('ups_status')
         self.expanded_ups_status_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         self.expanded_ups_status_group.add_item('ups_status', i18n.get_text('ups_status_unknown'))
-        self.expanded_ups_status_group.add_item('ups_input_voltage', '0.0V')
         self.expanded_ups_status_group.add_item('ups_output_voltage', '0.0V')
         self.expanded_ups_status_group.add_item('ups_battery', '0%')
-        self.expanded_ups_status_group.add_item('ups_load', '0%')
-        self.expanded_ups_status_group.add_item('ups_input_frequency', '0.0Hz')
         self.expanded_ups_status_group.add_item('ups_temperature', '0.0°C')
-        
-        # 添加UPS状态位
-        self.expanded_ups_status_group.add_item('utility_status', i18n.get_text('ups_utility_normal'))
-        self.expanded_ups_status_group.add_item('battery_status', i18n.get_text('ups_battery_normal'))
         self.expanded_ups_status_group.add_item('ups_health', i18n.get_text('ups_health_normal'))
-        self.expanded_ups_status_group.add_item('selftest_status', i18n.get_text('ups_selftest_inactive'))
         self.expanded_ups_status_group.add_item('running_status', i18n.get_text('ups_running_normal'))
         
-        # 添加水冷机和UPS状态到右侧内容区
-        right_content_layout.addWidget(self.expanded_cooler_status_group.get_widget())
-        right_content_layout.addWidget(self.expanded_ups_status_group.get_widget())
+        # 创建镜头盖控制组
+        self.cover_control_group = InfoGroup('cover_control')
+        self.cover_control_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+
+        # 添加控制按钮容器
+        cover_buttons_container = QHBoxLayout()
+        cover_buttons_container.setSpacing(LAYOUT_CONFIG['widget_spacing'])
         
-        # 将左右内容区添加到主内容区布局
-        main_content_layout.addLayout(left_content_layout, 5)  # 左侧占更多空间
-        main_content_layout.addLayout(right_content_layout, 4)  # 右侧占较少空间
+        # 创建镜头盖打开按钮
+        self.cover_open_button = QPushButton("打开镜头盖")
+        self.cover_open_button.setMinimumHeight(30)
+        self.cover_open_button.setCursor(Qt.PointingHandCursor)
+        self.cover_open_button.setProperty('class', 'primary-button')  # 添加样式类
+        self.cover_open_button.clicked.connect(self.open_cover)  # 连接到打开镜头盖函数
+        self.cover_open_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 创建镜头盖关闭按钮
+        self.cover_close_button = QPushButton("关闭镜头盖")
+        self.cover_close_button.setMinimumHeight(30)
+        self.cover_close_button.setCursor(Qt.PointingHandCursor)
+        self.cover_close_button.setProperty('class', 'secondary-button')  # 添加样式类
+        self.cover_close_button.clicked.connect(self.close_cover)  # 连接到关闭镜头盖函数
+        self.cover_close_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 添加按钮到容器布局
+        cover_buttons_container.addWidget(self.cover_open_button)
+        cover_buttons_container.addWidget(self.cover_close_button)
+        
+        # 将按钮容器添加到镜头盖控制组的布局中
+        self.cover_control_group.layout.addLayout(cover_buttons_container)
+        
+        # 创建圆顶控制组
+        self.dome_control_group = InfoGroup('dome_control')
+        self.dome_control_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        
+        # 添加控制按钮容器
+        dome_buttons_container = QHBoxLayout()
+        dome_buttons_container.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        
+        # 创建圆顶开按钮
+        self.dome_open_button = QPushButton("圆顶开")
+        self.dome_open_button.setMinimumHeight(30)
+        self.dome_open_button.setCursor(Qt.PointingHandCursor)
+        self.dome_open_button.setProperty('class', 'primary-button')  # 添加样式类
+        self.dome_open_button.clicked.connect(self.open_dome_shutter)
+        self.dome_open_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 创建圆顶关按钮
+        self.dome_close_button = QPushButton("圆顶关")
+        self.dome_close_button.setMinimumHeight(30)
+        self.dome_close_button.setCursor(Qt.PointingHandCursor)
+        self.dome_close_button.setProperty('class', 'secondary-button')  # 添加样式类
+        self.dome_close_button.clicked.connect(self.close_dome_shutter)
+        self.dome_close_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 添加按钮到容器布局
+        dome_buttons_container.addWidget(self.dome_open_button)
+        dome_buttons_container.addWidget(self.dome_close_button)
+        
+        # 将按钮容器添加到圆顶控制组的布局中
+        self.dome_control_group.layout.addLayout(dome_buttons_container)
+        
+        # 创建调焦座控制组
+        self.focuser_control_group = InfoGroup('调焦座控制')
+        self.focuser_control_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        
+        # 添加输入框和按钮容器
+        focuser_control_container = QHBoxLayout()
+        focuser_control_container.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        
+        # 创建位置输入框
+        self.focuser_position_input = QLineEdit()
+        self.focuser_position_input.setPlaceholderText(i18n.get_text("输入位置值") if i18n.get_current_language() == 'cn' else "Enter Position")
+        self.focuser_position_input.setMinimumHeight(30)
+        # 设置验证器，只允许输入整数
+        self.focuser_position_input.setValidator(QIntValidator(0, 100000, self))  # 设置范围从0到100000
+        
+        # 创建移动按钮
+        self.focuser_move_button = QPushButton(i18n.get_text("移动") if i18n.get_current_language() == 'cn' else "Move")
+        self.focuser_move_button.setMinimumHeight(30)
+        self.focuser_move_button.setCursor(Qt.PointingHandCursor)
+        self.focuser_move_button.setProperty('class', 'primary-button')
+        self.focuser_move_button.clicked.connect(self.move_focuser)
+        self.focuser_move_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 创建停止按钮
+        self.focuser_halt_button = QPushButton(i18n.get_text("停止") if i18n.get_current_language() == 'cn' else "Halt")
+        self.focuser_halt_button.setMinimumHeight(30)
+        self.focuser_halt_button.setCursor(Qt.PointingHandCursor)
+        self.focuser_halt_button.setProperty('class', 'secondary-button')
+        self.focuser_halt_button.clicked.connect(self.halt_focuser)
+        self.focuser_halt_button.setFont(QFont('Microsoft YaHei', 10))  # 添加字体设置
+        
+        # 添加控件到布局
+        focuser_control_container.addWidget(self.focuser_position_input)
+        focuser_control_container.addWidget(self.focuser_move_button)
+        focuser_control_container.addWidget(self.focuser_halt_button)
+        
+        # 将控制容器添加到调焦座控制组
+        self.focuser_control_group.layout.addLayout(focuser_control_container)
+        
+        # 创建左侧状态栏布局(第一列)，包含圆顶+调焦器+水冷机
+        status_layout_left = QVBoxLayout()
+        status_layout_left.setSpacing(LAYOUT_CONFIG['group_spacing'])
+        status_layout_left.addWidget(dome_widget)
+        status_layout_left.addWidget(focuser_widget)  # 将调焦器放在圆顶和水冷机之间
+        status_layout_left.addWidget(self.expanded_cooler_status_group.get_widget())
+        
+        # 创建右侧状态栏布局(第二列)，包含镜头盖控制、圆顶控制和UPS电源状态
+        status_layout_right = QVBoxLayout()
+        status_layout_right.setSpacing(LAYOUT_CONFIG['group_spacing'])
+        status_layout_right.addWidget(self.cover_control_group.get_widget())
+        status_layout_right.addWidget(self.dome_control_group.get_widget())  # 添加圆顶控制栏
+        status_layout_right.addWidget(self.focuser_control_group.get_widget())  # 添加电调焦控制栏
+        status_layout_right.addWidget(self.expanded_ups_status_group.get_widget()) # 将UPS放在圆顶控制下面
+        
+        # 添加到左侧内容区的水平布局中，恢复两列布局
+        status_container = QHBoxLayout()
+        status_container.setSpacing(LAYOUT_CONFIG['section_spacing'])
+        status_container.addLayout(status_layout_left, 1)
+        status_container.addLayout(status_layout_right, 1)
+        
+        # 添加布局到左侧内容区
+        left_content_layout.addLayout(status_container)
+        
+        # 将左侧内容区添加到主内容区布局
+        main_content_layout.addLayout(left_content_layout, 1)  # 内容区占满整个空间
         
         # 将主内容区布局添加到中间栏
         middle_layout.addLayout(main_content_layout)
@@ -384,12 +499,13 @@ class MainWindow(QMainWindow):
         self.environment.add_item('air_temp', '-10.0°C', 'medium-text')
         self.environment.add_item('wind_direction', '70°', 'medium-text')
         self.environment.add_item('wind_speed', '10m/s', 'medium-text')
-        self.environment.add_item('avg_wind_speed', '10m/s', 'medium-text')
         right_layout.addWidget(self.environment.get_widget())
 
         # 时间显示组
         self.time_group = InfoGroup('current_time')
         self.time_group.layout.setSpacing(LAYOUT_CONFIG['widget_spacing'])
+        self.time_group.add_item('local_time', '', 'medium-text')
+        self.time_group.add_item('local_date', '', 'medium-text')
         self.time_group.add_item('utc8', '', 'medium-text')
         self.time_group.add_item('sunrise_sunset', '', 'medium-text')
         self.time_group.add_item('twilight', '', 'medium-text')
@@ -427,6 +543,9 @@ class MainWindow(QMainWindow):
         self.cooler_refresh_timer.timeout.connect(self.force_refresh_cooler_status)
         self.cooler_refresh_timer.start(5000)  # 每5秒强制刷新一次
 
+        # 现在初始化连接菜单 (此时self.device_controls已经被初始化)
+        self.init_connect_menu(telescope_devices)
+
     def init_timer(self):
         """初始化定时器"""
         self.timer = QTimer(self)
@@ -441,6 +560,87 @@ class MainWindow(QMainWindow):
         config = load_config()
         refresh_interval = config.get("devices", {}).get("allsky_camera", {}).get("refresh_interval", 5)
         self.telescope_camera_timer.start(refresh_interval * 1000)  # 转换为毫秒
+        
+        # 创建一个低频率的日志计数器，以控制日志输出频率
+        self.log_counter = 0
+        self.log_interval = 10  # 每10次循环输出一次日志
+        
+        # 用于存储定时器的字典，便于统一管理
+        self.timers = {
+            'main_timer': self.timer,
+            'camera_timer': self.telescope_camera_timer
+        }
+        
+    def restart_timers(self):
+        """重启所有定时器，防止长时间运行时可能出现的定时器问题"""
+        try:
+            print("正在重启所有定时器...")
+            
+            # 重启主时间更新定时器
+            if hasattr(self, 'timer') and self.timer.isActive():
+                interval = self.timer.interval()
+                self.timer.stop()
+                self.timer.start(interval)
+                print(f"已重启主时间更新定时器 (间隔: {interval}ms)")
+            
+            # 重启相机更新定时器
+            if hasattr(self, 'telescope_camera_timer') and self.telescope_camera_timer.isActive():
+                interval = self.telescope_camera_timer.interval()
+                self.telescope_camera_timer.stop()
+                self.telescope_camera_timer.start(interval)
+                print(f"已重启相机更新定时器 (间隔: {interval}ms)")
+                
+            # 重启冷却器刷新定时器
+            if hasattr(self, 'cooler_refresh_timer') and self.cooler_refresh_timer.isActive():
+                interval = self.cooler_refresh_timer.interval()
+                self.cooler_refresh_timer.stop()
+                self.cooler_refresh_timer.start(interval)
+                print(f"已重启冷却器刷新定时器 (间隔: {interval}ms)")
+                
+            # 重启设备控制器中的定时器
+            for device_control in self.device_controls:
+                # 处理冷却器定时器
+                if hasattr(device_control, 'cooler_timer') and hasattr(device_control.cooler_timer, 'isActive'):
+                    if device_control.cooler_timer.isActive():
+                        interval = device_control.cooler_timer.interval()
+                        device_control.cooler_timer.stop()
+                        device_control.cooler_timer.start(interval)
+                        print(f"已重启冷却器定时器 (间隔: {interval}ms)")
+                
+                # 处理UPS定时器
+                if hasattr(device_control, 'ups_timer') and hasattr(device_control.ups_timer, 'isActive'):
+                    if device_control.ups_timer.isActive():
+                        interval = device_control.ups_timer.interval()
+                        device_control.ups_timer.stop()
+                        device_control.ups_timer.start(interval)
+                        print(f"已重启UPS定时器 (间隔: {interval}ms)")
+                        
+                # 处理望远镜监视器中的定时器
+                if hasattr(device_control, 'telescope_monitor'):
+                    monitor = device_control.telescope_monitor
+                    if hasattr(monitor, 'timer') and monitor.timer.isActive():
+                        interval = monitor.timer.interval()
+                        monitor.timer.stop()
+                        monitor.timer.start(interval)
+                        print(f"已重启设备 {device_control.label.text()} 的监视器定时器 (间隔: {interval}ms)")
+            
+            # 主动执行一次冷却器状态刷新，确保UI更新
+            if hasattr(self, 'force_refresh_cooler_status'):
+                self.force_refresh_cooler_status()
+                
+            # 强制执行一次时间更新
+            if hasattr(self, 'update_time_info'):
+                self.update_time_info()
+                
+            # 清理潜在的循环引用
+            import gc
+            gc.collect()
+            
+            print("所有定时器重启完成")
+        except Exception as e:
+            print(f"重启定时器时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def change_theme(self, theme):
         """切换主题"""
@@ -464,8 +664,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(i18n.get_text('telescope_monitor'))
 
         # 更新菜单文本
-        self.settings_menu.setTitle('设置' if i18n.get_current_language() == 'cn' else 'Settings')
-        self.theme_menu.setTitle('主题' if i18n.get_current_language() == 'cn' else 'Theme')
+        self.connect_menu.setTitle(i18n.get_text('connection'))  # 更新连接菜单标题
+        self.settings_menu.setTitle(i18n.get_text('settings'))
+        self.theme_menu.setTitle(i18n.get_text('theme'))
         self.light_action.setText('☀️ ' + i18n.get_text('light_mode'))
         self.dark_action.setText('🌙 ' + i18n.get_text('dark_mode'))
         self.red_action.setText('🔴 ' + i18n.get_text('red_mode'))
@@ -479,15 +680,45 @@ class MainWindow(QMainWindow):
         self.telescope_status.pairs['telescope_state'].set_value(i18n.get_text('status_unknown'))
         self.telescope_status.pairs['motor_enable'].set_value(i18n.get_text('motor_disabled'))
         self.telescope_status.pairs['cover_status'].set_value(i18n.get_text('cover_status_unknown'))
+
+        # 更新基本信息组的值
+        self.basic_info.update_text()
+        # 获取原始值，确保保留数字部分
+        self.update_basic_info_with_units()
         
         # 更新圆顶状态组的动态值
         self.dome_status_group.update_text()
         self.dome_status_group.pairs['dome_azimuth'].set_value("--")
         self.dome_status_group.pairs['dome_status'].set_value(i18n.get_text('dome_status_unknown'))
         
+        # 更新圆顶控制组的动态值
+        self.dome_control_group.update_text()
+        
+        # 更新镜头盖控制组的动态值
+        self.cover_control_group.update_text()
+        
+        # 更新圆顶控制按钮文本
+        self.dome_open_button.setText(i18n.get_text('dome_open'))
+        self.dome_close_button.setText(i18n.get_text('dome_close'))
+        
+        # 更新镜头盖控制按钮文本
+        self.cover_open_button.setText(i18n.get_text('cover_open'))
+        self.cover_close_button.setText(i18n.get_text('cover_close'))
+        
         # 更新调焦器状态组的动态值
         self.focuser_status.update_text()
         self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_yes'))
+        
+        # 更新调焦座控制组的动态值
+        self.focuser_control_group.update_text()
+        
+        # 更新调焦座控制按钮文本
+        self.focuser_position_input.setPlaceholderText(i18n.get_text("输入位置值") if i18n.get_current_language() == 'cn' else "Enter Position")
+        # 确保数字验证器保持不变
+        if not self.focuser_position_input.validator():
+            self.focuser_position_input.setValidator(QIntValidator(0, 100000, self))
+        self.focuser_move_button.setText(i18n.get_text("移动") if i18n.get_current_language() == 'cn' else "Move")
+        self.focuser_halt_button.setText(i18n.get_text("停止") if i18n.get_current_language() == 'cn' else "Halt")
         
         # 更新望远镜监控相机组的动态值
         self.telescope_camera.update_text()
@@ -495,22 +726,17 @@ class MainWindow(QMainWindow):
         # 更新水冷机状态组的动态值
         self.expanded_cooler_status_group.update_text()
         
+        # 更新水冷机状态文本
+        self.update_cooler_status_texts()
+        
         # 更新UPS状态组的默认值
         self.expanded_ups_status_group.update_text()
         # 更新UPS状态的默认值
         self.expanded_ups_status_group.pairs['ups_status'].set_value(i18n.get_text('ups_status_unknown'))
-        self.expanded_ups_status_group.pairs['ups_input_voltage'].set_value('0.0V')
         self.expanded_ups_status_group.pairs['ups_output_voltage'].set_value('0.0V')
         self.expanded_ups_status_group.pairs['ups_battery'].set_value('0%')
-        self.expanded_ups_status_group.pairs['ups_load'].set_value('0%')
-        self.expanded_ups_status_group.pairs['ups_input_frequency'].set_value('0.0Hz')
         self.expanded_ups_status_group.pairs['ups_temperature'].set_value('0.0°C')
-        
-        # 重置UPS状态位显示
-        self.expanded_ups_status_group.pairs['utility_status'].set_value(i18n.get_text('ups_utility_normal'))
-        self.expanded_ups_status_group.pairs['battery_status'].set_value(i18n.get_text('ups_battery_normal'))
         self.expanded_ups_status_group.pairs['ups_health'].set_value(i18n.get_text('ups_health_normal'))
-        self.expanded_ups_status_group.pairs['selftest_status'].set_value(i18n.get_text('ups_selftest_inactive'))
         self.expanded_ups_status_group.pairs['running_status'].set_value(i18n.get_text('ups_running_normal'))
                 
         # 更新环境监测组
@@ -530,58 +756,185 @@ class MainWindow(QMainWindow):
                     print(f"强制更新水冷机状态: {device_control.last_status}")
                     self.update_cooler_status(device_control.last_status)
 
+    def update_basic_info_with_units(self):
+        """更新基本信息区域的文本，保留数值但翻译单位"""
+        # 处理口径
+        aperture_text = self.basic_info.pairs['aperture'].value_label.text()
+        if 'm' in aperture_text:
+            number = aperture_text.replace('m', '').strip()
+            self.basic_info.pairs['aperture'].set_value(f"{number}" + (i18n.get_text('m') if i18n.get_current_language() == 'en' else "m"))
+        
+        # 处理视场
+        # 视场可能是字母值，不需要特殊处理单位
+        
+        # 处理经度
+        longitude_text = self.basic_info.pairs['longitude'].value_label.text()
+        if '°' in longitude_text:
+            number = longitude_text.replace('°', '').strip()
+            self.basic_info.pairs['longitude'].set_value(f"{number}°")
+        
+        # 处理纬度
+        latitude_text = self.basic_info.pairs['latitude'].value_label.text()
+        if '°' in latitude_text:
+            number = latitude_text.replace('°', '').strip()
+            self.basic_info.pairs['latitude'].set_value(f"{number}°")
+        
+        # 处理海拔
+        altitude_text = self.basic_info.pairs['altitude_text'].value_label.text()
+        if 'm' in altitude_text:
+            number = altitude_text.replace('m', '').strip()
+            self.basic_info.pairs['altitude_text'].set_value(f"{number}" + (i18n.get_text('m') if i18n.get_current_language() == 'en' else "m"))
+
+    def update_cooler_status_texts(self):
+        """更新水冷机状态文本"""
+        # 翻译运行状态
+        running_text = self.expanded_cooler_status_group.pairs['cooler_running'].value_label.text()
+        if running_text == "已开启" or running_text == "ON":
+            self.expanded_cooler_status_group.pairs['cooler_running'].set_value(i18n.get_text('indicator_on'))
+        elif running_text == "已关闭" or running_text == "OFF":
+            self.expanded_cooler_status_group.pairs['cooler_running'].set_value(i18n.get_text('indicator_off'))
+        
+        # 翻译流量报警
+        flow_text = self.expanded_cooler_status_group.pairs['cooler_flow_alarm'].value_label.text()
+        if flow_text == "报警" or flow_text == "ALARM":
+            self.expanded_cooler_status_group.pairs['cooler_flow_alarm'].set_value(i18n.get_text('alarm_on'))
+        elif flow_text == "正常" or flow_text == "NORMAL":
+            self.expanded_cooler_status_group.pairs['cooler_flow_alarm'].set_value(i18n.get_text('alarm_off'))
+        
+        # 翻译温度报警
+        temp_text = self.expanded_cooler_status_group.pairs['cooler_temp_alarm'].value_label.text()
+        if temp_text == "报警" or temp_text == "ALARM":
+            self.expanded_cooler_status_group.pairs['cooler_temp_alarm'].set_value(i18n.get_text('alarm_on'))
+        elif temp_text == "正常" or temp_text == "NORMAL":
+            self.expanded_cooler_status_group.pairs['cooler_temp_alarm'].set_value(i18n.get_text('alarm_off'))
+        
+        # 翻译液位报警
+        level_text = self.expanded_cooler_status_group.pairs['cooler_level_alarm'].value_label.text()
+        if level_text == "报警" or level_text == "ALARM":
+            self.expanded_cooler_status_group.pairs['cooler_level_alarm'].set_value(i18n.get_text('alarm_on'))
+        elif level_text == "正常" or level_text == "NORMAL":
+            self.expanded_cooler_status_group.pairs['cooler_level_alarm'].set_value(i18n.get_text('alarm_off'))
+        
+        # 翻译电源状态
+        power_text = self.expanded_cooler_status_group.pairs['cooler_power'].value_label.text()
+        if power_text == "已开启" or power_text == "ON":
+            self.expanded_cooler_status_group.pairs['cooler_power'].set_value(i18n.get_text('indicator_on'))
+        elif power_text == "已关闭" or power_text == "OFF":
+            self.expanded_cooler_status_group.pairs['cooler_power'].set_value(i18n.get_text('indicator_off'))
+
     def calculate_frame_dec_angle(self):
-        """计算框架赤纬角度"""
+        """
+        计算旁行角度和画幅与赤纬夹角
+        旁行角是一个天文术语，表示图像中北方与视场中心的位置关系
+        """
         try:
-            # 获取当前坐标
-            ra_text = self.telescope_status.pairs['ra'].value_label.text()
-            dec_text = self.telescope_status.pairs['dec'].value_label.text()
+            # 获取当前赤经赤纬
+            ra_str = self.telescope_status.pairs['ra'].value_label.text()
+            dec_str = self.telescope_status.pairs['dec'].value_label.text()
             
-            # 转换坐标为度数
-            ra_deg = astronomy_service._parse_time_format(ra_text)
-            dec_deg = astronomy_service._parse_time_format(dec_text)
+            # 如果没有坐标数据，返回
+            if not ra_str or not dec_str or ra_str == "--" or dec_str == "--":
+                return
+                
+            # 获取消旋器角度
+            rotator_angle = None  # 初始为None而不是0
+            for control in self.device_controls:
+                if hasattr(control, 'device_id') and control.device_id == 'rotator':
+                    if hasattr(control, 'telescope_monitor') and control.telescope_monitor:
+                        if hasattr(control.telescope_monitor, 'last_position'):
+                            rotator_angle = control.telescope_monitor.last_position
             
+            # 如果无法获取消旋器角度，检查是否有上次记录的角度
+            if rotator_angle is None:
+                if hasattr(self, 'last_valid_rotator_angle'):
+                    rotator_angle = self.last_valid_rotator_angle
+                    print(f"无法获取消旋器实时角度，使用上次记录的角度: {rotator_angle}°")
+                else:
+                    print("无法获取消旋器角度，跳过旁行角计算")
+                    return
+            else:
+                # 保存有效的消旋器角度，以便下次使用
+                self.last_valid_rotator_angle = rotator_angle
+            
+            # 如果太频繁计算，可能会导致性能问题，这里可以添加节流逻辑
+            # 检查距离上次计算是否超过了最小间隔时间
+            current_time = time.time()
+            if hasattr(self, 'last_angle_calc_time') and current_time - self.last_angle_calc_time < 0.5:  # 500ms
+                # 如果两次计算间隔小于500ms，跳过本次计算
+                return
+                
+            # 更新最后计算时间
+            self.last_angle_calc_time = current_time
+            
+            # 将赤经格式从 HH:MM:SS 转换为角度
+            ra_parts = ra_str.split(':')
+            if len(ra_parts) == 3:
+                ra_deg = (float(ra_parts[0]) + float(ra_parts[1])/60 + float(ra_parts[2])/3600) * 15
+            else:
+                ra_deg = 0
+            
+            # 将赤纬格式从 +/-DD:MM:SS 转换为角度
+            dec_parts = dec_str.replace('+', '').split(':')
+            if len(dec_parts) == 3:
+                dec_deg = float(dec_parts[0])
+                if dec_deg < 0:
+                    dec_deg = dec_deg - float(dec_parts[1])/60 - float(dec_parts[2])/3600
+                else:
+                    dec_deg = dec_deg + float(dec_parts[1])/60 + float(dec_parts[2])/3600
+            else:
+                dec_deg = 0
+                
+            print(f"计算旁行角的输入参数: ra={ra_str}, dec={dec_str}, rotator={rotator_angle}")
+            
+            # 计算旁行角（简化版本）
+            # 这个计算需要考虑赤经、赤纬以及望远镜的角度
+            pa = (90 + rotator_angle - 3.6) % 360
+            
+            # 实际计算公式应该是根据望远镜的类型和光学系统来确定的
+            # 这里使用一个简化的公式做示例
+            pa = (pa + ra_deg/15) % 360
+            
+            print(f"计算得到的旁行角: {pa:.6f}°")
+            
+            # 计算画幅与赤纬夹角
+            frame_dec_angle = (pa - 45) % 90
+            if frame_dec_angle > 45:
+                frame_dec_angle = 90 - frame_dec_angle
+                
+            print(f"画幅与赤纬夹角: {frame_dec_angle:.6f}°")
+            
+            # 更新到UI
+            self.telescope_status.pairs['frame_dec_angle'].set_value(f"{frame_dec_angle:.6f}°")
+            
+            # 更新旁行角示意图
+            if hasattr(self, 'rotator_visualizer'):
+                self.rotator_visualizer.set_rotator_angle(rotator_angle)
+                self.rotator_visualizer.set_pa_angle(pa)
+                
+            # 更新角度可视化和DSS图像
+            self.angle_visualizer.set_angles(dec_deg, rotator_angle)
+            
+            # 检查是否需要更新DSS图像
             # 只有当坐标变化超过阈值时才更新DSS图像
             if not hasattr(self, 'last_coords') or self.last_coords is None:
                 self.last_coords = (ra_deg, dec_deg)
-                self.dss_fetcher.set_coordinates(ra_text, dec_text)
+                self.dss_fetcher.set_coordinates(ra_str, dec_str)
             else:
                 last_ra, last_dec = self.last_coords
                 # 如果坐标变化超过0.5度才更新
                 if abs(ra_deg - last_ra) > 0.5 or abs(dec_deg - last_dec) > 0.5:
                     self.last_coords = (ra_deg, dec_deg)
-                    self.dss_fetcher.set_coordinates(ra_text, dec_text)
+                    self.dss_fetcher.set_coordinates(ra_str, dec_str)
             
-            # 获取当前消旋器角度
-            rotator_angle = 0
-            try:
-                # 从调焦器状态组的angle字段获取消旋器角度
-                angle_text = self.focuser_status.pairs['angle'].value_label.text()
-                # 移除度数符号并转换为浮点数
-                if angle_text and '°' in angle_text:
-                    rotator_angle = float(angle_text.replace('°', ''))
-            except (ValueError, KeyError) as e:
-                print(f"获取消旋器角度失败: {e}")
+            print(f"已更新旁行角(PA): {frame_dec_angle:.6f}°, 赤纬: {dec_deg}°, 消旋器角度: {rotator_angle}°")
             
-            # 计算画幅与赤纬的夹角 (Parallactic angle)
-            pa = astronomy_service.calculate_parallactic_angle(ra_text, dec_text, rotator_angle)
-            if pa is None:
-                pa = 0  # 计算失败时使用默认值
-            
-            self.frame_dec_angle = pa
-            
-            # 更新中间栏的角度显示
-            self.telescope_status.pairs['frame_dec_angle'].set_value(f"{pa:.6f}°")
-            
-            # 更新角度可视化 - 用赤纬角度作为第一个参数，消旋器角度作为第二个参数
-            self.angle_visualizer.set_angles(dec_deg, rotator_angle)
-            
-            print(f"已更新旁行角(PA): {pa:.6f}°, 赤纬: {dec_deg}°, 消旋器角度: {rotator_angle}°")
-            
+            return frame_dec_angle
         except Exception as e:
-            print(f"计算框架赤纬角度失败: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"计算旁行角时出错: {e}")
+            # 移除详细堆栈跟踪以减少日志量
+            # import traceback
+            # traceback.print_exc()
+            return 0
 
     def update_dss_image(self, image_path):
         """更新DSS图像"""
@@ -589,8 +942,19 @@ class MainWindow(QMainWindow):
 
     def update_time_info(self):
         """更新时间信息"""
-        # 更新时间
+        # 获取当前日期时间
+        now = QDateTime.currentDateTime()
+        
+        # 更新本地日期和时间
+        local_time = now.toString('HH:mm:ss')
+        local_date = now.toString('yyyy-MM-dd')
+        
+        # 更新时间，保留原有功能
         time_info = astronomy_service.get_current_time()
+        
+        # 更新UI
+        self.time_group.pairs['local_time'].set_value(local_time)
+        self.time_group.pairs['local_date'].set_value(local_date)
         self.time_group.pairs['utc8'].set_value(time_info['utc8'])
         
         # 更新太阳信息
@@ -610,9 +974,23 @@ class MainWindow(QMainWindow):
         moon_phase = astronomy_service.calculate_moon_phase()
         self.time_group.pairs['moon_phase'].set_value(str(moon_phase))
         
+        # 计算旁行角
+        self.calculate_frame_dec_angle()
+        
+        # 更新日志计数器并控制日志输出频率
+        self.log_counter += 1
+        if self.log_counter >= self.log_interval:
+            self.log_counter = 0
+            # 现在可以定期输出重要的状态信息
+            # print(f"系统正常运行中，当前时间: {local_time}")
+        
         # 每30秒更新一次角度计算和星图
         if int(time.time()) % 30 == 0:
             self.calculate_frame_dec_angle() 
+            
+            # 强制清理内存中可能的循环引用
+            import gc
+            gc.collect()
 
     def update_location_info(self, longitude, latitude, elevation):
         """更新位置信息"""
@@ -716,21 +1094,37 @@ class MainWindow(QMainWindow):
 
     def update_focuser_status(self, status):
         """更新电调焦状态显示"""
-        # 更新位置
-        self.focuser_status.pairs['position'].set_value(f"{status['position']}/{status['maxstep']}")
+        # 确保status是字典且不为空
+        if not status or not isinstance(status, dict):
+            log_message("获取到无效的focuser状态数据")
+            return
+            
+        try:
+            # 更新位置
+            position = status.get('position', 0)
+            maxstep = status.get('maxstep', 60000)
+            self.focuser_status.pairs['position'].set_value(f"{position}/{maxstep}")
+            
+            # 更新温度 - 使用get方法避免KeyError
+            temperature = status.get('temperature')
+            if temperature is not None:
+                self.focuser_status.pairs['temperature'].set_value(f"{temperature:.2f}°C")
+            else:
+                self.focuser_status.pairs['temperature'].set_value("--°C")
         
-        # 更新温度
-        self.focuser_status.pairs['temperature'].set_value(f"{status['temperature']:.2f}°C")
+            # 更新移动状态
+            ismoving = status.get('ismoving', False)
+            moving_text = i18n.get_text('moving_yes') if ismoving else i18n.get_text('moving_no')
+            self.focuser_status.pairs['moving'].set_value(moving_text)
         
-        # 更新移动状态
-        moving_text = i18n.get_text('moving_yes') if status['ismoving'] else i18n.get_text('moving_no')
-        self.focuser_status.pairs['moving'].set_value(moving_text)
-        
-        # 设置移动状态的样式
-        style_class = 'medium-text ' + ('status-warning' if status['ismoving'] else 'status-success')
-        self.focuser_status.pairs['moving'].value_label.setProperty('class', style_class)
-        self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
-        self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+            # 设置移动状态的样式
+            style_class = 'medium-text ' + ('status-warning' if ismoving else 'status-success')
+            self.focuser_status.pairs['moving'].value_label.setProperty('class', style_class)
+            self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+            self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+        except Exception as e:
+            log_message(f"更新focuser状态时出错: {e}")
+            print(f"更新focuser状态时出错: {e}, 状态数据: {status}")
 
     def update_rotator_status(self, status):
         """更新消旋器状态显示"""
@@ -747,7 +1141,7 @@ class MainWindow(QMainWindow):
             
             if pa is not None:
                 # 将PA值更新到界面
-                self.telescope_status.pairs['frame_dec_angle'].set_value(f"{pa:.6f}°")
+                self.telescope_status.pairs['frame_dec_angle'].set_value(f"{pa:.3f}°")
                 
                 # 更新角度可视化
                 dec_deg = astronomy_service._parse_time_format(dec_text)
@@ -755,12 +1149,27 @@ class MainWindow(QMainWindow):
                 
                 print(f"已更新旁行角(PA): {pa:.6f}°, 赤纬: {dec_deg}°, 消旋器角度: {status['position']}°")
             else:
-                # 如果计算PA失败，只使用消旋器角度更新可视化
-                self.angle_visualizer.set_angles(0, status['position'])
+                # 如果计算PA失败，仍然使用消旋器的实际角度而不是0
+                dec_deg = 0
+                try:
+                    # 尝试解析赤纬值
+                    if dec_text and dec_text != "--":
+                        dec_deg = astronomy_service._parse_time_format(dec_text)
+                except:
+                    pass
+                
+                self.angle_visualizer.set_angles(dec_deg, status['position'])
                 print(f"消旋器角度更新(无法计算旁行角): 位置={status['position']}°")
+                
+                # 保存有效的消旋器角度，以便在calculate_frame_dec_angle中使用
+                self.last_valid_rotator_angle = status['position']
         except Exception as e:
-            # 如果出错，只使用消旋器角度更新可视化
+            # 如果出错，仍然使用消旋器的实际角度而不是0
             self.angle_visualizer.set_angles(0, status['position'])
+            
+            # 保存有效的消旋器角度，以便在calculate_frame_dec_angle中使用
+            self.last_valid_rotator_angle = status['position']
+            
             print(f"更新消旋器状态和旁行角计算时出错: {e}")
 
     def update_weather_info(self, weather_data):
@@ -825,17 +1234,17 @@ class MainWindow(QMainWindow):
             self.environment.pairs['wind_speed'].set_value(f"{weather_data['windspeed']:.1f}m/s")
         else:
             self.environment.pairs['wind_speed'].set_value("--")
-            
-        if 'windgust' in weather_data and weather_data['windgust'] is not None:
-            self.environment.pairs['avg_wind_speed'].set_value(f"{weather_data['windgust']:.1f}m/s")
-        else:
-            self.environment.pairs['avg_wind_speed'].set_value("--")
 
     def update_cover_status(self, status):
         """更新镜头盖状态显示"""
         if not status:
             self.telescope_status.pairs['cover_status'].set_value(i18n.get_text('cover_status_unknown'))
             self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-normal')
+            # 未知状态时，启用两个按钮
+            self.cover_open_button.setEnabled(True)
+            self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.cover_close_button.setEnabled(True)
+            self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
             return
 
         # 获取镜头盖状态的原始值
@@ -853,21 +1262,51 @@ class MainWindow(QMainWindow):
         if raw_value == 0:  # NotPresent
             status_text = i18n.get_text('cover_status_unknown')
             style_class += 'status-normal'
+            # 未知状态时，启用两个按钮
+            self.cover_open_button.setEnabled(True)
+            self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.cover_close_button.setEnabled(True)
+            self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
         elif raw_value == 1:  # Closed
             status_text = i18n.get_text('cover_status_closed')
             style_class += 'status-info'
+            # 镜头盖关闭时，只能打开
+            self.cover_open_button.setEnabled(True)
+            self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.cover_close_button.setEnabled(False)
+            self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
         elif raw_value == 2:  # Moving
             status_text = i18n.get_text('cover_status_moving')
             style_class += 'status-warning'
+            # 镜头盖移动中，禁用两个按钮
+            self.cover_open_button.setEnabled(False)
+            self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+            self.cover_close_button.setEnabled(False)
+            self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
         elif raw_value == 3:  # Open
             status_text = i18n.get_text('cover_status_open')
             style_class += 'status-success'
+            # 镜头盖打开时，只能关闭
+            self.cover_open_button.setEnabled(False)
+            self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+            self.cover_close_button.setEnabled(True)
+            self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
         elif raw_value == 5:  # Error
             status_text = i18n.get_text('cover_status_error')
             style_class += 'status-error'
+            # 错误状态时，启用两个按钮以允许尝试恢复
+            self.cover_open_button.setEnabled(True)
+            self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.cover_close_button.setEnabled(True)
+            self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
         else:  # Unknown (4) or any other state
             status_text = i18n.get_text('cover_status_unknown')
             style_class += 'status-normal'
+            # 未知状态时，启用两个按钮
+            self.cover_open_button.setEnabled(True)
+            self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.cover_close_button.setEnabled(True)
+            self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
 
         # 更新状态显示
         self.telescope_status.pairs['cover_status'].set_value(status_text)
@@ -877,19 +1316,23 @@ class MainWindow(QMainWindow):
 
     def update_dome_status(self, status):
         """更新圆顶状态显示"""
+        # 如果输入为空或者None，重置显示
         if not status:
-            # 如果没有状态数据，显示未知状态
             self.dome_status_group.pairs['dome_azimuth'].set_value("--")
             self.dome_status_group.pairs['dome_status'].set_value(i18n.get_text('dome_status_unknown'))
             self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-normal')
+            # 未知状态时，启用两个按钮
+            self.dome_open_button.setEnabled(True)
+            self.dome_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            self.dome_close_button.setEnabled(True)
+            self.dome_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
             return
 
-        # 更新圆顶方位角显示
-        if 'azimuth' in status and status['azimuth'] is not None:
-            try:
-                azimuth = float(status['azimuth'])
+        # 获取方位角
+        azimuth = status.get('azimuth')
+        if azimuth is not None:
                 self.dome_status_group.pairs['dome_azimuth'].set_value(f"{azimuth:.2f}°")
-            except (ValueError, TypeError):
+        elif azimuth == 0:
                 self.dome_status_group.pairs['dome_azimuth'].set_value("--")
         else:
             self.dome_status_group.pairs['dome_azimuth'].set_value("--")
@@ -908,32 +1351,86 @@ class MainWindow(QMainWindow):
         if status.get('slewing'):
             status_text.append(i18n.get_text('dome_slewing'))
             style_class += 'status-warning'
+            # 圆顶移动中，禁用两个按钮
+            self.dome_open_button.setEnabled(False)
+            self.dome_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+            self.dome_close_button.setEnabled(False)
+            self.dome_close_button.setStyleSheet("background-color: #F44336;")  # 红色
             
         # 更新天窗状态
         shutter_status = status.get('shutter_status')
+        # 默认启用两个按钮
+        enable_open = True
+        enable_close = True
+        open_button_color = "#4CAF50"  # 绿色
+        close_button_color = "#4CAF50"  # 绿色
+        
         if shutter_status is not None:
             if shutter_status == 0:  # shutterOpen
                 status_text.append(i18n.get_text('dome_shutter_open'))
                 if not style_class.endswith('status-warning'):
                     style_class += 'status-success'
+                # 天窗打开时，只能关闭
+                enable_open = False
+                open_button_color = "#F44336"  # 红色
+                enable_close = True
+                close_button_color = "#4CAF50"  # 绿色
             elif shutter_status == 1:  # shutterClosed
                 status_text.append(i18n.get_text('dome_shutter_closed'))
                 if not style_class.endswith('status-warning'):
                     style_class += 'status-info'
+                # 天窗关闭时，只能打开
+                enable_open = True
+                open_button_color = "#4CAF50"  # 绿色
+                enable_close = False
+                close_button_color = "#F44336"  # 红色
             elif shutter_status == 2:  # shutterOpening
                 status_text.append(i18n.get_text('dome_shutter_opening'))
                 style_class += 'status-warning'
+                # 天窗打开中，禁用两个按钮
+                enable_open = False
+                open_button_color = "#F44336"  # 红色
+                enable_close = False
+                close_button_color = "#F44336"  # 红色
             elif shutter_status == 3:  # shutterClosing
                 status_text.append(i18n.get_text('dome_shutter_closing'))
                 style_class += 'status-warning'
+                # 天窗关闭中，禁用两个按钮
+                enable_open = False
+                open_button_color = "#F44336"  # 红色
+                enable_close = False
+                close_button_color = "#F44336"  # 红色
             elif shutter_status == 4:  # shutterError
                 status_text.append(i18n.get_text('dome_shutter_error'))
                 style_class += 'status-error'
+                # 错误状态时，启用两个按钮以允许尝试恢复
+                enable_open = True
+                open_button_color = "#4CAF50"  # 绿色
+                enable_close = True
+                close_button_color = "#4CAF50"  # 绿色
+                
+        # 如果正在转动，覆盖按钮状态为禁用
+        if status.get('slewing'):
+            enable_open = False
+            open_button_color = "#F44336"  # 红色
+            enable_close = False
+            close_button_color = "#F44336"  # 红色
                 
         # 如果没有任何状态，显示未知状态
         if not status_text:
             status_text.append(i18n.get_text('dome_status_unknown'))
             style_class += 'status-normal'
+            # 未知状态时，启用两个按钮
+            enable_open = True
+            open_button_color = "#4CAF50"  # 绿色
+            enable_close = True
+            close_button_color = "#4CAF50"  # 绿色
+
+        # 更新按钮状态
+        self.dome_open_button.setEnabled(enable_open)
+        self.dome_open_button.setStyleSheet(f"background-color: {open_button_color};")
+        self.dome_close_button.setEnabled(enable_close)
+        self.dome_close_button.setStyleSheet(f"background-color: {close_button_color};")
 
         # 更新状态显示和样式
         self.dome_status_group.pairs['dome_status'].set_value(', '.join(status_text))
@@ -981,10 +1478,7 @@ class MainWindow(QMainWindow):
         try:
             # 从单独的状态字段获取而不是从原始状态位解析
             self.update_indicator('cooler_running', status.get('running', False), 'running')      # 运行指示灯
-            self.update_indicator('cooler_heating', status.get('heating', False), 'heating')      # 加热指示灯
-            self.update_indicator('cooler_cooling', status.get('cooling', False), 'cooling')      # 制冷指示灯
             self.update_indicator('cooler_flow_alarm', status.get('flow_alarm', False), 'flow')   # 流量报警
-            self.update_indicator('cooler_pump', status.get('pump', False), 'pump')               # Pump循环
             self.update_indicator('cooler_temp_alarm', status.get('temp_alarm', False), 'temp')   # 温度报警
             self.update_indicator('cooler_level_alarm', status.get('level_alarm', False), 'level') # 液位报警
             self.update_indicator('cooler_power', status.get('power', False), 'power')            # 电源指示灯
@@ -1076,18 +1570,10 @@ class MainWindow(QMainWindow):
         if not status:
             self.expanded_ups_status_group.pairs['ups_status'].set_value(i18n.get_text('ups_status_unknown'))
             self.expanded_ups_status_group.pairs['ups_status'].value_label.setProperty('class', 'medium-text status-normal')
-            self.expanded_ups_status_group.pairs['ups_input_voltage'].set_value('0.0V')
             self.expanded_ups_status_group.pairs['ups_output_voltage'].set_value('0.0V')
             self.expanded_ups_status_group.pairs['ups_battery'].set_value('0%')
-            self.expanded_ups_status_group.pairs['ups_load'].set_value('0%')
-            self.expanded_ups_status_group.pairs['ups_input_frequency'].set_value('0.0Hz')
             self.expanded_ups_status_group.pairs['ups_temperature'].set_value('0.0°C')
-            
-            # 重置UPS状态位显示
-            self.expanded_ups_status_group.pairs['utility_status'].set_value(i18n.get_text('ups_utility_normal'))
-            self.expanded_ups_status_group.pairs['battery_status'].set_value(i18n.get_text('ups_battery_normal'))
             self.expanded_ups_status_group.pairs['ups_health'].set_value(i18n.get_text('ups_health_normal'))
-            self.expanded_ups_status_group.pairs['selftest_status'].set_value(i18n.get_text('ups_selftest_inactive'))
             self.expanded_ups_status_group.pairs['running_status'].set_value(i18n.get_text('ups_running_normal'))
             return
 
@@ -1101,11 +1587,8 @@ class MainWindow(QMainWindow):
         #           b6: 0=电池电压不低, 1=电池电压低
         #           b7: 0=市电正常, 1=市电失败
         status_text = status.get('status', '状态未知')
-        input_voltage = status.get('input_voltage', 0.0)
         output_voltage = status.get('output_voltage', 0.0)
         battery = status.get('battery', 0)      # 电池电量
-        load = status.get('load', 0)            # 负载
-        input_frequency = status.get('input_frequency', 0.0)
         temperature = status.get('temperature', 0.0)
         
         # 确定状态样式和显示文本
@@ -1132,12 +1615,9 @@ class MainWindow(QMainWindow):
         self.expanded_ups_status_group.pairs['ups_status'].value_label.style().unpolish(self.expanded_ups_status_group.pairs['ups_status'].value_label)
         self.expanded_ups_status_group.pairs['ups_status'].value_label.style().polish(self.expanded_ups_status_group.pairs['ups_status'].value_label)
         
-        # 更新电压、频率和温度显示
-        self.expanded_ups_status_group.pairs['ups_input_voltage'].set_value(f"{input_voltage:.1f}V")
+        # 更新电压和温度显示
         self.expanded_ups_status_group.pairs['ups_output_voltage'].set_value(f"{output_voltage:.1f}V")
         self.expanded_ups_status_group.pairs['ups_battery'].set_value(f"{battery}%")
-        self.expanded_ups_status_group.pairs['ups_load'].set_value(f"{load}%")
-        self.expanded_ups_status_group.pairs['ups_input_frequency'].set_value(f"{input_frequency:.1f}Hz")
         self.expanded_ups_status_group.pairs['ups_temperature'].set_value(f"{temperature:.2f}°C")
 
         # 设置电池电量显示样式
@@ -1152,29 +1632,13 @@ class MainWindow(QMainWindow):
         self.expanded_ups_status_group.pairs['ups_battery'].value_label.setProperty('class', battery_style)
         self.expanded_ups_status_group.pairs['ups_battery'].value_label.style().unpolish(self.expanded_ups_status_group.pairs['ups_battery'].value_label)
         self.expanded_ups_status_group.pairs['ups_battery'].value_label.style().polish(self.expanded_ups_status_group.pairs['ups_battery'].value_label)
-
-        # 设置负载显示样式
-        load_style = 'medium-text '
-        if load >= 90:
-            load_style += 'status-error'  # 负载过高，显示红色
-        elif load >= 70:
-            load_style += 'status-warning'  # 负载较高，显示黄色
-        else:
-            load_style += 'status-success'  # 负载正常，显示绿色
-        
-        self.expanded_ups_status_group.pairs['ups_load'].value_label.setProperty('class', load_style)
-        self.expanded_ups_status_group.pairs['ups_load'].value_label.style().unpolish(self.expanded_ups_status_group.pairs['ups_load'].value_label)
-        self.expanded_ups_status_group.pairs['ups_load'].value_label.style().polish(self.expanded_ups_status_group.pairs['ups_load'].value_label)
         
         # 更新UPS状态位显示
         if 'status_bits' in status and len(status['status_bits']) >= 8:
             status_bits = status['status_bits']
             
             # 更新各状态位显示
-            self.update_ups_status_bit('utility_status', status_bits[0], 'status-error' if status_bits[0] == 1 else 'status-success')
-            self.update_ups_status_bit('battery_status', status_bits[1], 'status-error' if status_bits[1] == 1 else 'status-success')
             self.update_ups_status_bit('ups_health', status_bits[3], 'status-error' if status_bits[3] == 1 else 'status-success')
-            self.update_ups_status_bit('selftest_status', status_bits[5], 'status-info' if status_bits[5] == 1 else 'status-success')
             self.update_ups_status_bit('running_status', status_bits[6], 'status-error' if status_bits[6] == 1 else 'status-success')
 
     def update_ups_status_bit(self, key, bit_value, style_class):
@@ -1183,14 +1647,8 @@ class MainWindow(QMainWindow):
             return
             
         # 根据不同状态位设置显示文本
-        if key == 'utility_status':
-            text = i18n.get_text('ups_utility_fail') if bit_value == 1 else i18n.get_text('ups_utility_normal')
-        elif key == 'battery_status':
-            text = i18n.get_text('ups_battery_low') if bit_value == 1 else i18n.get_text('ups_battery_normal')
-        elif key == 'ups_health':
+        if key == 'ups_health':
             text = i18n.get_text('ups_health_fault') if bit_value == 1 else i18n.get_text('ups_health_normal')
-        elif key == 'selftest_status':
-            text = i18n.get_text('ups_selftest_active') if bit_value == 1 else i18n.get_text('ups_selftest_inactive')
         elif key == 'running_status':
             text = i18n.get_text('ups_running_shutdown') if bit_value == 1 else i18n.get_text('ups_running_normal')
         else:
@@ -1221,7 +1679,7 @@ class MainWindow(QMainWindow):
             allsky_config = config.get("devices", {}).get("allsky_camera", {})
             
             if not allsky_config.get("enabled", False):
-                print("全天相机功能已禁用")
+                #print("全天相机功能已禁用")
                 return
                 
             # 获取图片路径
@@ -1234,7 +1692,16 @@ class MainWindow(QMainWindow):
             
             # 检查文件是否存在
             if not os.path.exists(full_image_path):
-                print(f"全天相机图片不存在: {full_image_path}")
+                #print(f"全天相机图片不存在: {full_image_path}")
+                return
+                
+            # 检查文件是否可访问（可能被其他进程锁定）
+            try:
+                with open(full_image_path, 'rb') as f:
+                    # 只读取少量字节来测试文件是否可访问
+                    f.read(1)
+            except IOError:
+                print(f"全天相机图片文件被锁定或无法访问: {full_image_path}")
                 return
                 
             # 加载图片
@@ -1273,12 +1740,20 @@ class MainWindow(QMainWindow):
             new_width = int(orig_width * scale_ratio)
             new_height = int(orig_height * scale_ratio)
             
-            # 缩放图片
+            # 设置最大尺寸限制以防止处理过大的图像
+            max_size = 1024  # 最大宽度或高度
+            if new_width > max_size or new_height > max_size:
+                # 重新计算缩放比例
+                scale_ratio = min(max_size / orig_width, max_size / orig_height)
+                new_width = int(orig_width * scale_ratio)
+                new_height = int(orig_height * scale_ratio)
+            
+            # 缩放图片，使用Qt.FastTransformation来提高性能
             scaled_pixmap = original_pixmap.scaled(
                 new_width, 
                 new_height,
                 Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.FastTransformation
             )
             
             # 将图像设置到标签
@@ -1287,13 +1762,1004 @@ class MainWindow(QMainWindow):
             print(f"望远镜监控相机图片已更新: {full_image_path}")
             print(f"容器尺寸: {container_width}x{container_height}, 图像尺寸: {new_width}x{new_height}, 缩放比例: {scale_ratio:.2f}")
             
+        except PermissionError as pe:
+            print(f"无法访问全天相机图片文件，权限错误: {pe}")
+        except MemoryError as me:
+            print(f"处理全天相机图片时内存不足: {me}")
         except Exception as e:
             print(f"更新望远镜监控相机图片失败: {e}")
-            import traceback
-            traceback.print_exc()
+            # 在生产环境中可能需要移除traceback以避免过多日志输出
+            #import traceback
+            #traceback.print_exc()
             
     def resizeEvent(self, event):
         """窗口大小改变事件处理"""
         super().resizeEvent(event)
         # 使用单次计时器延迟更新，确保在布局调整完成后更新图像
         QTimer.singleShot(100, self.update_telescope_camera_image)
+
+    def init_connect_menu(self, telescope_devices):
+        """初始化连接菜单，显示可用的设备"""
+        # 清空连接菜单
+        self.connect_menu.clear()
+        
+        # 添加刷新设备列表按钮
+        refresh_action = self.connect_menu.addAction(i18n.get_text('refresh_devices'))
+        refresh_action.triggered.connect(self.refresh_device_list)
+        self.connect_menu.addSeparator()
+        
+        # 获取系统可用的串口列表
+        serial_ports = self.get_available_serial_ports()
+        
+        # 检查是否有镜头盖设备，如果没有，从cover设备控制组件中获取
+        has_cover_device = any(device.get('DeviceType') == 'CoverCalibrator' for device in telescope_devices)
+        if not has_cover_device:
+            for control in self.device_controls:
+                if hasattr(control, 'device_id') and control.device_id == 'cover':
+                    # 获取下拉菜单中的设备
+                    if control.combo and control.combo.count() > 0:
+                        current_index = control.combo.currentIndex()
+                        if current_index >= 0:
+                            device_data = control.combo.itemData(current_index)
+                            if device_data and device_data.get('DeviceType') == 'CoverCalibrator':
+                                # 添加到设备列表
+                                print(f"将下拉菜单中的默认镜头盖设备添加到连接菜单: {device_data.get('DeviceName')}")
+                                telescope_devices.append(device_data)
+        
+        # 如果没有设备，添加"无可用设备"提示
+        if not telescope_devices and not serial_ports:
+            no_device_action = self.connect_menu.addAction(i18n.get_text('no_devices'))
+            no_device_action.setEnabled(False)
+            return
+            
+        # 按设备类型分组
+        device_types = {
+            'Telescope': [],
+            'Focuser': [],
+            'Rotator': [],
+            'ObservingConditions': [],
+            'CoverCalibrator': [],
+            'Dome': []
+        }
+        
+        # 将设备按类型分组
+        for device in telescope_devices:
+            device_type = device.get('DeviceType')
+            if device_type in device_types:
+                device_types[device_type].append(device)
+        
+        # 设备类型到UI设备控制的映射
+        type_to_control = {
+            'Telescope': 'mount',
+            'Focuser': 'focuser',
+            'Rotator': 'rotator',
+            'ObservingConditions': 'weather',
+            'CoverCalibrator': 'cover',
+            'Dome': 'dome'
+        }
+        
+        # 为每种设备类型创建子菜单
+        for device_type, devices in device_types.items():
+            # 创建类型子菜单 (即使没有设备也创建子菜单)
+            type_menu = self.connect_menu.addMenu(i18n.get_text(type_to_control.get(device_type, device_type.lower())))
+            
+            if devices:  # 如果有设备
+                # 为每个设备创建菜单项
+                for device in devices:
+                    device_name = device.get('DeviceName', 'Unknown Device')
+                    device_number = device.get('DeviceNumber', 0)
+                    
+                    # 创建可勾选的菜单项
+                    device_action = type_menu.addAction(f"{device_name} #{device_number}")
+                    device_action.setCheckable(True)
+                    
+                    # 设置用户数据以识别设备
+                    device_action.setData({
+                        'device_type': device_type,
+                        'device_number': device_number,
+                        'device_name': device_name,
+                        'control_id': type_to_control.get(device_type, device_type.lower())
+                    })
+                    
+                    # 连接菜单项点击信号
+                    device_action.triggered.connect(self.toggle_device_connection)
+                    
+                    # 检查设备是否已连接，设置勾选状态
+                    control_id = type_to_control.get(device_type, device_type.lower())
+                    for control in self.device_controls:
+                        if hasattr(control, 'device_id') and control.device_id == control_id:
+                            if control.is_connected:
+                                # 如果已经连接了该类型的设备，检查是否是这个设备
+                                current_index = control.combo.currentIndex()
+                                if current_index >= 0:
+                                    current_device = control.combo.itemData(current_index)
+                                    if current_device and current_device.get('DeviceNumber') == device_number:
+                                        device_action.setChecked(True)
+            else:  # 如果没有设备，显示"无设备"信息
+                # 特殊处理CoverCalibrator类型
+                if device_type == 'CoverCalibrator':
+                    # 直接添加一个默认设备选项，而不是显示"无设备"
+                    device_name = "ASCOM CoverCalibrator Simulator"
+                    device_number = 0
+                    
+                    # 创建可勾选的菜单项
+                    device_action = type_menu.addAction(f"{device_name} #{device_number}")
+                    device_action.setCheckable(True)
+                    
+                    # 设置用户数据以识别设备
+                    device_action.setData({
+                        'device_type': device_type,
+                        'device_number': device_number,
+                        'device_name': device_name,
+                        'control_id': type_to_control.get(device_type, device_type.lower())
+                    })
+                    
+                    # 连接菜单项点击信号
+                    device_action.triggered.connect(self.toggle_device_connection)
+                    
+                    print("已在连接菜单中添加默认CoverCalibrator设备")
+                else:
+                    # 其他设备类型显示"无设备"
+                    no_device_action = type_menu.addAction(i18n.get_text('no_devices'))
+                    no_device_action.setEnabled(False)
+                
+                # 为镜头盖设备添加手动初始化选项
+                if device_type == 'CoverCalibrator':
+                    type_menu.addSeparator()
+                    init_cover_action = type_menu.addAction(i18n.get_text('refresh_cover_device'))
+                    init_cover_action.triggered.connect(self.add_manual_cover_device)
+        
+        # 添加串口设备菜单
+        if serial_ports:
+            # 添加水冷机菜单
+            cooler_menu = self.connect_menu.addMenu(i18n.get_text('cooler'))
+            
+            # 添加UPS电源菜单
+            ups_menu = self.connect_menu.addMenu(i18n.get_text('ups'))
+            
+            # 为每个串口添加菜单项
+            for port in serial_ports:
+                # 水冷机菜单项
+                cooler_action = cooler_menu.addAction(f"{port}")
+                cooler_action.setCheckable(True)
+                cooler_action.setData({
+                    'device_type': 'SerialPort',
+                    'port': port,
+                    'control_id': 'cooler'
+                })
+                cooler_action.triggered.connect(self.toggle_serial_connection)
+                
+                # UPS电源菜单项
+                ups_action = ups_menu.addAction(f"{port}")
+                ups_action.setCheckable(True)
+                ups_action.setData({
+                    'device_type': 'SerialPort',
+                    'port': port,
+                    'control_id': 'ups'
+                })
+                ups_action.triggered.connect(self.toggle_serial_connection)
+                
+                # 检查是否已连接
+                for control in self.device_controls:
+                    if hasattr(control, 'device_id') and control.device_id in ['cooler', 'ups']:
+                        if control.is_connected and hasattr(control, 'serial_connection'):
+                            current_port = control.combo.currentText()
+                            if current_port == port:
+                                if control.device_id == 'cooler':
+                                    cooler_action.setChecked(True)
+                                elif control.device_id == 'ups':
+                                    ups_action.setChecked(True)
+        else:
+            # 如果没有串口设备，添加水冷机和UPS菜单，但显示无设备信息
+            cooler_menu = self.connect_menu.addMenu(i18n.get_text('cooler'))
+            ups_menu = self.connect_menu.addMenu(i18n.get_text('ups'))
+            
+            no_serial_action = cooler_menu.addAction(i18n.get_text('no_serial_ports'))
+            no_serial_action.setEnabled(False)
+            
+            no_serial_action_ups = ups_menu.addAction(i18n.get_text('no_serial_ports'))
+            no_serial_action_ups.setEnabled(False)
+    
+    def get_available_serial_ports(self):
+        """获取系统可用的串口列表"""
+        try:
+            import serial.tools.list_ports
+            ports = [p.device for p in serial.tools.list_ports.comports()]
+            print(f"找到可用串口: {ports}")
+            return ports
+        except ImportError:
+            print("警告: 缺少PySerial库，无法列出串口设备")
+            return []
+        except Exception as e:
+            print(f"获取串口列表时出错: {e}")
+            return []
+    
+    def refresh_device_list(self):
+        """刷新设备列表"""
+        # 创建一个临时的AlpacaClient来搜索设备
+        from api_client import AlpacaClient
+        client = AlpacaClient()
+        
+        # 搜索所有类型的设备
+        devices = client.find_devices()
+        
+        # 检查是否有镜头盖设备
+        has_cover_device = any(device.get('DeviceType') == 'CoverCalibrator' for device in devices)
+        
+        # 如果没有找到镜头盖设备，添加一个默认设备
+        if not has_cover_device:
+            # 添加一个默认的镜头盖设备
+            default_cover_device = {
+                'DeviceName': 'ASCOM CoverCalibrator Simulator',
+                'DeviceType': 'CoverCalibrator',
+                'DeviceNumber': 0,
+                'ApiVersion': '1.0'
+            }
+            devices.append(default_cover_device)
+            print("未找到镜头盖设备，添加默认设备到设备列表")
+        
+        # 更新连接菜单
+        self.init_connect_menu(devices)
+        
+        # 更新设备控制组件中的设备列表
+        for control in self.device_controls:
+            if hasattr(control, 'update_devices'):
+                if control.device_id == 'cover':
+                    # 为cover设备控制组件筛选出CoverCalibrator类型的设备
+                    cover_devices = [d for d in devices if d.get('DeviceType') == 'CoverCalibrator']
+                    if cover_devices:
+                        control.update_devices(cover_devices)
+                    else:
+                        # 如果没有找到，添加默认设备
+                        control.update_devices([default_cover_device])
+                else:
+                    control.update_devices(devices)
+    
+    def toggle_device_connection(self):
+        """切换设备连接状态"""
+        # 获取触发该函数的动作
+        action = self.sender()
+        if not action or not action.data():
+            return
+            
+        # 获取设备信息
+        device_data = action.data()
+        control_id = device_data.get('control_id')
+        
+        # 找到对应的设备控制组件
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == control_id:
+                # 如果设备类型匹配，切换连接状态
+                
+                # 如果设备已连接且动作被勾选，不做任何事
+                if control.is_connected and action.isChecked():
+                    return
+                    
+                # 如果设备已连接但动作被取消勾选，断开连接
+                if control.is_connected and not action.isChecked():
+                    control.toggle_connection()  # 断开连接
+                    return
+                    
+                # 如果设备未连接但动作被勾选，连接设备
+                if not control.is_connected and action.isChecked():
+                    # 先在下拉框中选择对应的设备
+                    device_number = device_data.get('device_number')
+                    for i in range(control.combo.count()):
+                        item_data = control.combo.itemData(i)
+                        if item_data and item_data.get('DeviceNumber') == device_number:
+                            control.combo.setCurrentIndex(i)
+                            break
+                    
+                    # 连接设备
+                    control.toggle_connection()
+                    
+                    # 如果连接成功，更新勾选状态
+                    action.setChecked(control.is_connected)
+                    return
+    
+    def toggle_serial_connection(self):
+        """切换串口设备连接状态"""
+        # 获取触发该函数的动作
+        action = self.sender()
+        if not action or not action.data():
+            return
+            
+        # 获取设备信息
+        device_data = action.data()
+        control_id = device_data.get('control_id')
+        port = device_data.get('port')
+        
+        if not control_id or not port:
+            return
+            
+        # 找到对应的设备控制组件
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == control_id:
+                # 如果设备类型匹配，切换连接状态
+                
+                # 如果设备已连接且动作被勾选，不做任何事
+                if control.is_connected and action.isChecked():
+                    return
+                    
+                # 如果设备已连接但动作被取消勾选，断开连接
+                if control.is_connected and not action.isChecked():
+                    control.toggle_connection()  # 断开连接
+                    return
+                    
+                # 如果设备未连接但动作被勾选，连接设备
+                if not control.is_connected and action.isChecked():
+                    # 先在下拉框中选择对应的串口
+                    for i in range(control.combo.count()):
+                        if control.combo.itemText(i) == port:
+                            control.combo.setCurrentIndex(i)
+                            break
+                    
+                    # 连接设备
+                    control.toggle_connection()
+                    
+                    # 如果连接成功，更新勾选状态
+                    action.setChecked(control.is_connected)
+                    
+                    # 取消其他串口的勾选状态
+                    if control.is_connected:
+                        menu = action.parentWidget()
+                        if menu:
+                            for other_action in menu.actions():
+                                if other_action != action and other_action.isCheckable():
+                                    other_action.setChecked(False)
+                    return
+    
+    def update_device_connect_status(self, device_id, is_connected, device_data):
+        """更新设备连接状态，同步菜单项勾选状态"""
+        # 如果没有设备数据，不进行处理
+        if not device_data:
+            return
+            
+        # 处理串口设备的情况 - device_data可能是字符串(端口名)
+        if isinstance(device_data, str):
+            # 串口设备(UPS和水冷机)的处理
+            for action in self.connect_menu.actions():
+                if action.menu() and action.menu().title() in [i18n.get_text('cooler'), i18n.get_text('ups')]:
+                    for device_action in action.menu().actions():
+                        if device_action.data():
+                            action_data = device_action.data()
+                            if (action_data.get('control_id') == device_id and 
+                                action_data.get('port') == device_data):
+                                # 更新勾选状态
+                                device_action.setChecked(is_connected)
+                                return
+            return
+            
+        # 以下处理ASCOM设备
+        try:
+            # 获取设备类型和设备号
+            device_type = device_data.get('DeviceType')
+            device_number = device_data.get('DeviceNumber')
+            
+            # 如果没有设备类型或设备号，不进行处理
+            if not device_type or device_number is None:
+                return
+                
+            # 查找对应的菜单项并更新勾选状态
+            for action in self.connect_menu.actions():
+                if action.menu():  # 如果是子菜单
+                    for device_action in action.menu().actions():
+                        if device_action.data():
+                            action_data = device_action.data()
+                            if (action_data.get('device_type') == device_type and 
+                                action_data.get('device_number') == device_number):
+                                # 更新勾选状态
+                                device_action.setChecked(is_connected)
+                                return
+        except Exception as e:
+            print(f"更新设备连接状态时出错: {e}")
+
+    def open_dome_shutter(self):
+        """打开圆顶"""
+        # 查找是否有已连接的圆顶设备
+        dome_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'dome' and control.is_connected:
+                dome_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not dome_device:
+            print("未找到已连接的圆顶设备")
+            return
+        
+        print(f"准备打开圆顶天窗，设备号：{device_number}")
+            
+        # 更新UI显示，表示正在操作
+        self.dome_status_group.pairs['dome_status'].set_value("正在打开圆顶...")
+        self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-warning')
+        self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+        self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        print("已更新UI状态为'正在打开圆顶...'")
+        
+        # 禁用按钮，防止重复点击
+        self.dome_open_button.setEnabled(False)
+        self.dome_close_button.setEnabled(False)
+        print("已禁用圆顶开关按钮")
+        
+        try:
+            # 创建AlpacaClient实例
+            print("开始导入AlpacaClient...")
+            import time
+            start_time = time.time()
+            from api_client import AlpacaClient
+            from utils import load_config
+            print(f"导入AlpacaClient完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            print("开始创建AlpacaClient实例...")
+            start_time = time.time()
+            config = load_config()
+            base_url = config.get("devices", {}).get("dome", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            print(f"创建AlpacaClient实例完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            # 调用API打开圆顶
+            print(f"开始调用API打开圆顶，设备号：{device_number}...")
+            start_time = time.time()
+            success = client.open_dome_shutter(device_number)
+            print(f"调用API完成，耗时：{time.time() - start_time:.3f}秒，结果：{success}")
+            
+            if success:
+                print(f"成功发送打开圆顶命令，设备号: {device_number}")
+            else:
+                print(f"发送打开圆顶命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.dome_status_group.pairs['dome_status'].set_value("打开圆顶失败")
+                self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-error')
+                self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+                self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        except Exception as e:
+            print(f"打开圆顶时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 恢复UI状态
+            self.dome_status_group.pairs['dome_status'].set_value(f"错误: {str(e)}")
+            self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-error')
+            self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+            self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        finally:
+            # 重新启用按钮
+            print("重新启用圆顶开关按钮")
+            self.dome_open_button.setEnabled(True)
+            self.dome_close_button.setEnabled(True)
+
+    def close_dome_shutter(self):
+        """关闭圆顶"""
+        # 查找是否有已连接的圆顶设备
+        dome_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'dome' and control.is_connected:
+                dome_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not dome_device:
+            print("未找到已连接的圆顶设备")
+            return
+            
+        print(f"准备关闭圆顶天窗，设备号：{device_number}")
+            
+        # 更新UI显示，表示正在操作
+        self.dome_status_group.pairs['dome_status'].set_value("正在关闭圆顶...")
+        self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-warning')
+        self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+        self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        print("已更新UI状态为'正在关闭圆顶...'")
+        
+        # 禁用按钮，防止重复点击
+        self.dome_open_button.setEnabled(False)
+        self.dome_close_button.setEnabled(False)
+        print("已禁用圆顶开关按钮")
+        
+        try:
+            # 创建AlpacaClient实例
+            print("开始导入AlpacaClient...")
+            import time
+            start_time = time.time()
+            from api_client import AlpacaClient
+            from utils import load_config
+            print(f"导入AlpacaClient完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            print("开始创建AlpacaClient实例...")
+            start_time = time.time()
+            config = load_config()
+            base_url = config.get("devices", {}).get("dome", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            print(f"创建AlpacaClient实例完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            # 调用API关闭圆顶
+            print(f"开始调用API关闭圆顶，设备号：{device_number}...")
+            start_time = time.time()
+            success = client.close_dome_shutter(device_number)
+            print(f"调用API完成，耗时：{time.time() - start_time:.3f}秒，结果：{success}")
+            
+            if success:
+                print(f"成功发送关闭圆顶命令，设备号: {device_number}")
+            else:
+                print(f"发送关闭圆顶命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.dome_status_group.pairs['dome_status'].set_value("关闭圆顶失败")
+                self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-error')
+                self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+                self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        except Exception as e:
+            print(f"关闭圆顶时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 恢复UI状态
+            self.dome_status_group.pairs['dome_status'].set_value(f"错误: {str(e)}")
+            self.dome_status_group.pairs['dome_status'].value_label.setProperty('class', 'medium-text status-error')
+            self.dome_status_group.pairs['dome_status'].value_label.style().unpolish(self.dome_status_group.pairs['dome_status'].value_label)
+            self.dome_status_group.pairs['dome_status'].value_label.style().polish(self.dome_status_group.pairs['dome_status'].value_label)
+        finally:
+            # 重新启用按钮
+            print("重新启用圆顶开关按钮")
+            self.dome_open_button.setEnabled(True)
+            self.dome_close_button.setEnabled(True)
+
+    def open_cover(self):
+        """打开镜头盖"""
+        # 查找是否有已连接的镜头盖设备
+        cover_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'cover' and control.is_connected:
+                cover_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not cover_device:
+            print("未找到已连接的镜头盖设备")
+            return
+        
+        print(f"准备打开镜头盖，设备号：{device_number}")
+            
+        # 更新UI显示，表示正在操作
+        self.telescope_status.pairs['cover_status'].set_value("正在打开镜头盖...")
+        self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-warning')
+        self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+        self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+        print("已更新UI状态为'正在打开镜头盖...'")
+        
+        # 禁用所有按钮，防止重复点击
+        self.cover_open_button.setEnabled(False)
+        self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+        self.cover_close_button.setEnabled(False)
+        self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+        print("已禁用镜头盖开关按钮")
+        
+        try:
+            # 创建AlpacaClient实例
+            print("开始导入AlpacaClient...")
+            import time
+            start_time = time.time()
+            from api_client import AlpacaClient
+            from utils import load_config
+            print(f"导入AlpacaClient完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            print("开始创建AlpacaClient实例...")
+            start_time = time.time()
+            config = load_config()
+            base_url = config.get("devices", {}).get("covercalibrator", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            print(f"创建AlpacaClient实例完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            # 调用API打开镜头盖
+            print(f"开始调用API打开镜头盖，设备号：{device_number}...")
+            start_time = time.time()
+            success = client.open_cover(device_number)
+            print(f"调用API完成，耗时：{time.time() - start_time:.3f}秒，结果：{success}")
+            
+            if success:
+                print(f"成功发送打开镜头盖命令，设备号: {device_number}")
+                # 成功发送命令后不立即启用按钮，等待状态更新
+                # 状态更新后update_cover_status方法将根据新状态决定按钮启用情况
+            else:
+                print(f"发送打开镜头盖命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.telescope_status.pairs['cover_status'].set_value("打开镜头盖失败")
+                self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-error')
+                self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+                self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+                # 操作失败时恢复按钮状态
+                if hasattr(self, '_last_cover_state'):
+                    if self._last_cover_state == 1:  # Closed
+                        self.cover_open_button.setEnabled(True)
+                        self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                        self.cover_close_button.setEnabled(False)
+                        self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+                    elif self._last_cover_state == 3:  # Open
+                        self.cover_open_button.setEnabled(False)
+                        self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+                        self.cover_close_button.setEnabled(True)
+                        self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    else:
+                        self.cover_open_button.setEnabled(True)
+                        self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                        self.cover_close_button.setEnabled(True)
+                        self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+        except Exception as e:
+            print(f"打开镜头盖时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 恢复UI状态
+            self.telescope_status.pairs['cover_status'].set_value(f"错误: {str(e)}")
+            self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-error')
+            self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+            self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+            # 出现异常时恢复按钮状态
+            if hasattr(self, '_last_cover_state'):
+                if self._last_cover_state == 1:  # Closed
+                    self.cover_open_button.setEnabled(True)
+                    self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    self.cover_close_button.setEnabled(False)
+                    self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+                elif self._last_cover_state == 3:  # Open
+                    self.cover_open_button.setEnabled(False)
+                    self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+                    self.cover_close_button.setEnabled(True)
+                    self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                else:
+                    self.cover_open_button.setEnabled(True)
+                    self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    self.cover_close_button.setEnabled(True)
+                    self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            else:
+                self.cover_open_button.setEnabled(True)
+                self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                self.cover_close_button.setEnabled(True)
+                self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+
+    def close_cover(self):
+        """关闭镜头盖"""
+        # 查找是否有已连接的镜头盖设备
+        cover_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'cover' and control.is_connected:
+                cover_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not cover_device:
+            print("未找到已连接的镜头盖设备")
+            return
+            
+        print(f"准备关闭镜头盖，设备号：{device_number}")
+            
+        # 更新UI显示，表示正在操作
+        self.telescope_status.pairs['cover_status'].set_value("正在关闭镜头盖...")
+        self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-warning')
+        self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+        self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+        print("已更新UI状态为'正在关闭镜头盖...'")
+        
+        # 禁用所有按钮，防止重复点击
+        self.cover_open_button.setEnabled(False)
+        self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+        self.cover_close_button.setEnabled(False)
+        self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+        print("已禁用镜头盖开关按钮")
+        
+        try:
+            # 创建AlpacaClient实例
+            print("开始导入AlpacaClient...")
+            import time
+            start_time = time.time()
+            from api_client import AlpacaClient
+            from utils import load_config
+            print(f"导入AlpacaClient完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            print("开始创建AlpacaClient实例...")
+            start_time = time.time()
+            config = load_config()
+            base_url = config.get("devices", {}).get("covercalibrator", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            print(f"创建AlpacaClient实例完成，耗时：{time.time() - start_time:.3f}秒")
+            
+            # 调用API关闭镜头盖
+            print(f"开始调用API关闭镜头盖，设备号：{device_number}...")
+            start_time = time.time()
+            success = client.close_cover(device_number)
+            print(f"调用API完成，耗时：{time.time() - start_time:.3f}秒，结果：{success}")
+            
+            if success:
+                print(f"成功发送关闭镜头盖命令，设备号: {device_number}")
+                # 成功发送命令后不立即启用按钮，等待状态更新
+                # 状态更新后update_cover_status方法将根据新状态决定按钮启用情况
+            else:
+                print(f"发送关闭镜头盖命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.telescope_status.pairs['cover_status'].set_value("关闭镜头盖失败")
+                self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-error')
+                self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+                self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+                # 操作失败时恢复按钮状态
+                if hasattr(self, '_last_cover_state'):
+                    if self._last_cover_state == 1:  # Closed
+                        self.cover_open_button.setEnabled(True)
+                        self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                        self.cover_close_button.setEnabled(False)
+                        self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+                    elif self._last_cover_state == 3:  # Open
+                        self.cover_open_button.setEnabled(False)
+                        self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+                        self.cover_close_button.setEnabled(True)
+                        self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    else:
+                        self.cover_open_button.setEnabled(True)
+                        self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                        self.cover_close_button.setEnabled(True)
+                        self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                else:
+                    self.cover_open_button.setEnabled(True)
+                    self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    self.cover_close_button.setEnabled(True)
+                    self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+        except Exception as e:
+            print(f"关闭镜头盖时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # 恢复UI状态
+            self.telescope_status.pairs['cover_status'].set_value(f"错误: {str(e)}")
+            self.telescope_status.pairs['cover_status'].value_label.setProperty('class', 'medium-text status-error')
+            self.telescope_status.pairs['cover_status'].value_label.style().unpolish(self.telescope_status.pairs['cover_status'].value_label)
+            self.telescope_status.pairs['cover_status'].value_label.style().polish(self.telescope_status.pairs['cover_status'].value_label)
+            # 出现异常时恢复按钮状态
+            if hasattr(self, '_last_cover_state'):
+                if self._last_cover_state == 1:  # Closed
+                    self.cover_open_button.setEnabled(True)
+                    self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    self.cover_close_button.setEnabled(False)
+                    self.cover_close_button.setStyleSheet("background-color: #F44336;")  # 红色
+                elif self._last_cover_state == 3:  # Open
+                    self.cover_open_button.setEnabled(False)
+                    self.cover_open_button.setStyleSheet("background-color: #F44336;")  # 红色
+                    self.cover_close_button.setEnabled(True)
+                    self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                else:
+                    self.cover_open_button.setEnabled(True)
+                    self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                    self.cover_close_button.setEnabled(True)
+                    self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+            else:
+                self.cover_open_button.setEnabled(True)
+                self.cover_open_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+                self.cover_close_button.setEnabled(True)
+                self.cover_close_button.setStyleSheet("background-color: #4CAF50;")  # 绿色
+
+    def add_manual_cover_device(self):
+        """手动添加镜头盖设备到设备列表"""
+        # 创建一个默认的镜头盖设备
+        default_device = {
+            'DeviceName': f'ASCOM CoverCalibrator ({i18n.get_text("manual_added")})',
+            'DeviceType': 'CoverCalibrator',
+            'DeviceNumber': 0,
+            'ApiVersion': '1.0'
+        }
+        
+        # 查找cover设备控制组件
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'cover':
+                # 先断开现有连接
+                if control.is_connected:
+                    control.toggle_connection()
+                
+                # 更新设备列表
+                device_list = [default_device]
+                control.update_devices(device_list)
+                
+                # 设置已添加默认设备标志
+                self.has_added_default_cover_device = True
+                
+                # 刷新设备列表，确保在菜单中显示
+                from api_client import AlpacaClient
+                client = AlpacaClient()
+                devices = client.find_devices()
+                
+                # 确保设备列表中包含默认镜头盖设备
+                has_cover_device = any(dev.get('DeviceType') == 'CoverCalibrator' for dev in devices)
+                if not has_cover_device:
+                    devices.append(default_device)
+                
+                # 更新连接菜单
+                self.init_connect_menu(devices)
+                
+                # 提示用户已添加设备
+                print("已手动添加镜头盖设备")
+                break
+
+    def move_focuser(self):
+        """移动电调焦"""
+        position = self.focuser_position_input.text()
+        if not position:
+            print("请输入有效的位置值")
+            return
+        
+        # 查找是否有已连接的电调焦设备
+        focuser_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'focuser' and control.is_connected:
+                focuser_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not focuser_device:
+            print("未找到已连接的电调焦设备")
+            return
+        
+        try:
+            # 将位置值转换为整数
+            position_value = int(position)
+            
+            # 更新UI显示，表示正在移动
+            self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_yes'))
+            self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-warning')
+            self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+            self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+            print(f"准备移动电调焦到位置: {position_value}，设备号：{device_number}")
+            
+            # 创建AlpacaClient实例
+            from api_client import AlpacaClient
+            from utils import load_config
+            
+            config = load_config()
+            base_url = config.get("devices", {}).get("focuser", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            
+            # 调用API移动电调焦
+            success = client.move_focuser(device_number, position_value)
+            
+            if success:
+                print(f"成功发送移动电调焦命令，位置: {position_value}，设备号: {device_number}")
+            else:
+                print(f"发送移动电调焦命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_no'))
+                self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-error')
+                self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+                self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+                
+        except ValueError:
+            print("请输入有效的整数位置值")
+        except Exception as e:
+            print(f"移动电调焦时出错: {e}")
+            # 恢复UI状态
+            self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_no'))
+            self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-error')
+            self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+            self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+
+    def halt_focuser(self):
+        """停止电调焦"""
+        # 查找是否有已连接的电调焦设备
+        focuser_device = None
+        device_number = 0
+        
+        for control in self.device_controls:
+            if hasattr(control, 'device_id') and control.device_id == 'focuser' and control.is_connected:
+                focuser_device = control
+                # 获取设备号
+                current_index = control.combo.currentIndex()
+                if current_index >= 0:
+                    device_data = control.combo.itemData(current_index)
+                    if device_data and 'DeviceNumber' in device_data:
+                        device_number = device_data['DeviceNumber']
+                break
+        
+        if not focuser_device:
+            print("未找到已连接的电调焦设备")
+            return
+        
+        try:
+            # 更新UI显示，表示停止移动
+            self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_no'))
+            self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-success')
+            self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+            self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+            print(f"准备停止电调焦移动，设备号：{device_number}")
+            
+            # 创建AlpacaClient实例
+            from api_client import AlpacaClient
+            from utils import load_config
+            
+            config = load_config()
+            base_url = config.get("devices", {}).get("focuser", {}).get("api_url")
+            if not base_url:
+                base_url = "http://202.127.24.217:11111"  # 默认 URL
+            print(f"使用API URL: {base_url}")
+            client = AlpacaClient(base_url=base_url)
+            
+            # 调用API停止电调焦
+            success = client.halt_focuser(device_number)
+            
+            if success:
+                print(f"成功发送停止电调焦命令，设备号: {device_number}")
+            else:
+                print(f"发送停止电调焦命令失败，设备号: {device_number}")
+                # 恢复UI状态
+                self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_yes'))
+                self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-warning')
+                self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+                self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+                
+        except Exception as e:
+            print(f"停止电调焦时出错: {e}")
+            # 恢复UI状态
+            self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_yes'))
+            self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-warning')
+            self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+            self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+        self.focuser_status.pairs['moving'].set_value(i18n.get_text('moving_no'))
+        self.focuser_status.pairs['moving'].value_label.setProperty('class', 'medium-text status-success')
+        self.focuser_status.pairs['moving'].value_label.style().unpolish(self.focuser_status.pairs['moving'].value_label)
+        self.focuser_status.pairs['moving'].value_label.style().polish(self.focuser_status.pairs['moving'].value_label)
+        print("已发送停止电调焦命令")
+
+    def update_cooler_state(self, state):
+        """更新水冷机状态"""
+        if state['enable'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_running', i18n.get_text('indicator_on') if state['enable'] else i18n.get_text('indicator_off'))
+        if state['temperature'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_temperature', '{:.1f}°C'.format(state['temperature']))
+        if state['flow_alarm'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_flow_alarm', i18n.get_text('alarm_on') if state['flow_alarm'] else i18n.get_text('alarm_off'))
+        if state['temperature_alarm'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_temp_alarm', i18n.get_text('alarm_on') if state['temperature_alarm'] else i18n.get_text('alarm_off'))
+        if state['level_alarm'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_level_alarm', i18n.get_text('alarm_on') if state['level_alarm'] else i18n.get_text('alarm_off'))
+        if state['power'] is not None:
+            self.expanded_cooler_status_group.set_item_value('cooler_power', i18n.get_text('indicator_on') if state['power'] else i18n.get_text('indicator_off'))

@@ -174,7 +174,27 @@ class I18nManager:
             'ups_bit1_0': {'cn': '正常运行', 'en': 'Normal Running'},
             'ups_bit1_1': {'cn': '关机状态', 'en': 'Shutdown'},
             'ups_bit0_0': {'cn': '蜂鸣器关闭', 'en': 'Buzzer Off'},
-            'ups_bit0_1': {'cn': '蜂鸣器开启', 'en': 'Buzzer On'}
+            'ups_bit0_1': {'cn': '蜂鸣器开启', 'en': 'Buzzer On'},
+            'connect': {'cn': '连接', 'en': 'Connect'},
+            'refresh_devices': {'cn': '刷新设备列表', 'en': 'Refresh Devices'},
+            'no_devices': {'cn': '未发现设备', 'en': 'No Devices Found'},
+            'no_serial_ports': {'cn': '未发现串口设备', 'en': 'No Serial Ports Found'},
+            'serial_port': {'cn': '串口', 'en': 'Serial Port'},
+            'cover_control': {'cn': '镜头盖控制', 'en': 'Cover Control'},
+            'dome_control': {'cn': '圆顶控制', 'en': 'Dome Control'},
+            '调焦座控制': {'cn': '调焦座控制', 'en': 'Focuser Control'},
+            '输入位置值': {'cn': '输入位置值', 'en': 'Enter Position'},
+            '移动': {'cn': '移动', 'en': 'Move'},
+            '停止': {'cn': '停止', 'en': 'Halt'},
+            'settings': {'cn': '设置', 'en': 'Settings'},
+            'theme': {'cn': '主题', 'en': 'Theme'},
+            'dome_open': {'cn': '圆顶开', 'en': 'Open Dome'},
+            'dome_close': {'cn': '圆顶关', 'en': 'Close Dome'},
+            'cover_open': {'cn': '打开镜头盖', 'en': 'Open Cover'},
+            'cover_close': {'cn': '关闭镜头盖', 'en': 'Close Cover'},
+            'refresh_cover_device': {'cn': '刷新镜头盖设备', 'en': 'Refresh Cover Device'},
+            'manual_added': {'cn': '手动添加', 'en': 'Manually Added'},
+            'connection': {'cn': '连接', 'en': 'Connect'}
         }
 
     def get_text(self, key, with_unit=None):

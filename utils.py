@@ -15,3 +15,5 @@ def log_message(message):
 
     with open("app.log", "a", encoding="utf-8") as log_file:
         log_file.write(log_entry)
+
+

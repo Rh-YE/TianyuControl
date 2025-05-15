@@ -359,7 +359,7 @@ class AstronomyService:
             den = math.tan(lat) * math.cos(delta) - math.sin(delta) * math.cos(h)
             parallactic_angle = math.degrees(math.atan2(num, den))
             
-            print(f"计算得到的旁行角: {parallactic_angle:.6f}°")
+            print(f"计算得到的旁行角: {parallactic_angle:.3f}°")
             
             # 考虑消旋器角度与旁行角的关系，计算画幅与赤纬的夹角
             # 画幅与赤纬夹角 = |rotator_angle - parallactic_angle|

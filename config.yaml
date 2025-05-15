@@ -80,6 +80,14 @@
                 "shutter_status"
             ]
         },
+        "covercalibrator": {
+            "enabled": true,
+            "api_url": "http://202.127.24.217:11111",
+            "endpoints": [
+                "coverstate",
+                "calibratorstate"
+            ]
+        },
         "cooler": {
             "enabled": true,
             "api_url": "serial",

@@ -1,0 +1,35 @@
+2025-05-14 15:33:26,661 - memory_monitor - INFO - 内存监控启动 - 基准内存使用: {'timestamp': 1747208006.6510692, 'formatted_time': '2025-05-14 15:33:26', 'rss': 70012928, 'rss_mb': 66.76953125, 'vms': 156061696, 'vms_mb': 148.83203125, 'percent': 0.2050887764835046, 'system_total': 34233729024, 'system_total_mb': 32647.828125, 'system_available': 24071512064, 'system_available_mb': 22956.3828125, 'system_percent': 29.7, 'gc_objects': 85100, 'maxrss': 0, 'gc_collected': 0, 'circular_refs': 0}
+2025-05-14 15:33:26,661 - memory_monitor - INFO - 检查间隔: 5000ms, 垃圾回收间隔: 60000ms
+2025-05-14 15:33:26,661 - memory_monitor - INFO - 警告阈值: 80.0%, 临界阈值: 90.0%
+2025-05-14 15:33:26,671 - tianyu_app - INFO - 天宇望远镜控制系统启动
+2025-05-14 15:33:27,488 - memory_monitor - INFO - 内存监控服务已启动
+2025-05-14 15:33:29,840 - tianyu_app - INFO - 主窗口已显示
+2025-05-14 15:33:38,782 - memory_monitor - INFO - 内存监控启动 - 基准内存使用: {'timestamp': 1747208018.7758496, 'formatted_time': '2025-05-14 15:33:38', 'rss': 69390336, 'rss_mb': 66.17578125, 'vms': 155238400, 'vms_mb': 148.046875, 'percent': 0.20279153331887986, 'system_total': 34233729024, 'system_total_mb': 32647.828125, 'system_available': 24099676160, 'system_available_mb': 22983.2421875, 'system_percent': 29.6, 'gc_objects': 85088, 'maxrss': 0, 'gc_collected': 0, 'circular_refs': 0}
+2025-05-14 15:33:38,782 - memory_monitor - INFO - 检查间隔: 5000ms, 垃圾回收间隔: 60000ms
+2025-05-14 15:33:38,782 - memory_monitor - INFO - 警告阈值: 80.0%, 临界阈值: 90.0%
+2025-05-14 15:33:38,789 - tianyu_app - INFO - 天宇望远镜控制系统启动
+2025-05-14 15:33:39,187 - memory_monitor - INFO - 内存监控服务已启动
+2025-05-14 15:33:40,809 - tianyu_app - INFO - 主窗口已显示
+2025-05-14 15:37:40,488 - memory_monitor - INFO - 内存监控启动 - 基准内存使用: {'timestamp': 1747208260.4809148, 'formatted_time': '2025-05-14 15:37:40', 'rss': 69480448, 'rss_mb': 66.26171875, 'vms': 155324416, 'vms_mb': 148.12890625, 'percent': 0.20288725178407252, 'system_total': 34233729024, 'system_total_mb': 32647.828125, 'system_available': 24164847616, 'system_available_mb': 23045.39453125, 'system_percent': 29.4, 'gc_objects': 85076, 'maxrss': 0, 'gc_collected': 0, 'circular_refs': 0}
+2025-05-14 15:37:40,489 - memory_monitor - INFO - 检查间隔: 5000ms, 垃圾回收间隔: 60000ms
+2025-05-14 15:37:40,489 - memory_monitor - INFO - 警告阈值: 80.0%, 临界阈值: 90.0%
+2025-05-14 15:37:40,498 - tianyu_app - INFO - 天宇望远镜控制系统启动
+2025-05-14 15:37:41,005 - memory_monitor - INFO - 内存监控服务已启动
+2025-05-14 15:39:09,986 - memory_monitor - INFO - 内存监控启动 - 基准内存使用: {'timestamp': 1747208349.9792228, 'formatted_time': '2025-05-14 15:39:09', 'rss': 69476352, 'rss_mb': 66.2578125, 'vms': 155332608, 'vms_mb': 148.13671875, 'percent': 0.20640490537990422, 'system_total': 34233729024, 'system_total_mb': 32647.828125, 'system_available': 24134295552, 'system_available_mb': 23016.2578125, 'system_percent': 29.5, 'gc_objects': 85099, 'maxrss': 0, 'gc_collected': 0, 'circular_refs': 0}
+2025-05-14 15:39:09,987 - memory_monitor - INFO - 检查间隔: 5000ms, 垃圾回收间隔: 60000ms
+2025-05-14 15:39:09,987 - memory_monitor - INFO - 警告阈值: 80.0%, 临界阈值: 90.0%
+2025-05-14 15:39:09,994 - tianyu_app - INFO - 天宇望远镜控制系统启动
+2025-05-14 15:39:10,462 - memory_monitor - INFO - 内存监控服务已启动
+2025-05-14 15:39:11,856 - tianyu_app - INFO - 主窗口已显示
+2025-05-14 15:39:30,360 - memory_monitor - INFO - 内存监控服务已停止
+2025-05-14 15:39:30,422 - tianyu_app - INFO - 应用程序结束，执行最终清理...
+2025-05-14 16:31:38,175 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/focuser/0/maxstep?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,175 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/rotator/0/reverse?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,176 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/focuser/0/temperature?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,176 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/focuser/0/ismoving?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,177 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/telescope/0/tracking?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,177 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/rotator/0/stepsize?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,177 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/rotator/0/position?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,178 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/telescope/0/slewing?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,182 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/focuser/0/position?ClientID=123&ClientTransactionID=1234
+2025-05-14 16:31:38,185 - urllib3.connectionpool - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。', None, 10054, None)': http://202.127.24.217:11111/api/v1/rotator/0/ismoving?ClientID=123&ClientTransactionID=1234
